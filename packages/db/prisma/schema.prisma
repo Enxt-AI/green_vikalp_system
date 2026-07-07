@@ -1,0 +1,585 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model User {
+  id                   String             @id @default(uuid())
+  username             String             @unique
+  passwordHash         String
+  fullName             String
+  role                 Role               @default(TELE_CALLER)
+  isActive             Boolean            @default(true)
+  needsPasswordChange  Boolean            @default(true)
+  lastLoginAt          DateTime?
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+  email                String?            @unique
+  googleCalendarId     String?
+  googleCalendarSynced Boolean            @default(false)
+  googleRefreshToken   String?
+  googleDriveFolderId  String?
+  contactNumber        String?
+  employeeId           String?
+  googleSheetsSynced   Boolean            @default(false)
+  googleSheetsUrl      String?
+  googleFormsUrl       String?
+  createdCampaigns     Campaign[]         @relation("CampaignCreator")
+  createdFolders       Folder[]           @relation("FolderCreator")
+  createdInteractions  Interaction[]      @relation("InteractionCreator")
+  assignedLeads        Lead[]             @relation("LeadOwner")
+  uploadedDocuments    ManagedDocument[]  @relation("DocumentUploader")
+  meetings             Meeting[]          @relation("MeetingOrganizer")
+  meetingAttendees     MeetingAttendee[]  @relation("MeetingAttendee")
+  notes                Note[]             @relation("NoteAuthor")
+  createdPipelines     Pipeline[]         @relation("PipelineCreator")
+  listedProperties     Property[]         @relation("PropertyListedBy")
+  pushSubscriptions    PushSubscription[]
+  tasks                Task[]             @relation("TaskAssignee")
+  createdWorkflows     Workflow[]         @relation("WorkflowCreator")
+  assignedCampaigns    Campaign[]         @relation("AssignedCampaigns")
+  sharedDocuments      ManagedDocument[]  @relation("SharedDocuments")
+  sharedFolders        Folder[]           @relation("SharedFolders")
+
+  @@index([username])
+  @@index([isActive])
+  @@index([role])
+  @@index([email])
+}
+
+model Pipeline {
+  id          String          @id @default(uuid())
+  name        String
+  description String?
+  type        PipelineType    @default(BUYER)
+  isActive    Boolean         @default(true)
+  createdById String
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  campaigns   Campaign[]
+  createdBy   User            @relation("PipelineCreator", fields: [createdById], references: [id])
+  stages      PipelineStage[]
+
+  @@index([type, isActive])
+  @@index([createdById])
+}
+
+model PipelineStage {
+  id          String     @id @default(uuid())
+  pipelineId  String
+  name        String
+  description String?
+  order       Int
+  color       String     @default("#3B82F6")
+  isDefault   Boolean    @default(false)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  isFinal     Boolean    @default(false)
+  leads       Lead[]
+  pipeline    Pipeline   @relation(fields: [pipelineId], references: [id], onDelete: Cascade)
+  workflows   Workflow[] @relation("WorkflowStage")
+  destinationWorkflows Workflow[] @relation("WorkflowDestinationStage")
+
+  @@unique([pipelineId, order])
+  @@index([pipelineId, order])
+}
+
+model Campaign {
+  id                   String             @id @default(uuid())
+  name                 String
+  description          String?
+  pipelineId           String
+  status               CampaignStatus     @default(ACTIVE)
+  startDate            DateTime
+  endDate              DateTime?
+  budget               Decimal?           @db.Decimal(12, 2)
+  actualSpend          Decimal?           @db.Decimal(12, 2)
+  source               String?
+  sourceDetails        String?
+  assignedToIds        String[]
+  createdById          String
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+  createdBy            User               @relation("CampaignCreator", fields: [createdById], references: [id])
+  pipeline             Pipeline           @relation(fields: [pipelineId], references: [id])
+  campaignProperties   CampaignProperty[]
+  leads                Lead[]
+  destinationWorkflows Workflow[]         @relation("WorkflowDestinationCampaign")
+  sourceWorkflows      Workflow[]         @relation("WorkflowSourceCampaign")
+  assignedTo           User[]             @relation("AssignedCampaigns")
+
+  @@index([pipelineId, status])
+  @@index([status, startDate])
+  @@index([createdById])
+}
+
+model Lead {
+  id                     String             @id @default(uuid())
+  email                  String?
+  mobile                 String?
+  score                  Int                @default(0)
+  priority               Priority           @default(MEDIUM)
+  tags                   String[]
+  lastContactedAt        DateTime?
+  nextFollowUpAt         DateTime?
+  createdAt              DateTime           @default(now())
+  updatedAt              DateTime           @updatedAt
+  initialNotes           String?
+  archivedAt             DateTime?
+  isArchived             Boolean            @default(false)
+  alternatePhone         String?
+  archivedReason         String?
+  assignedToId           String
+  bathroomsMin           Decimal?           @db.Decimal(3, 1)
+  bedroomsMin            Int?
+  budgetMax              Decimal?           @db.Decimal(12, 2)
+  budgetMin              Decimal?           @db.Decimal(12, 2)
+  campaignId             String
+  currentHousingStatus   HousingStatus?
+  currentStageId         String
+  firstName              String
+  lastName               String
+  leadType               LeadType           @default(BUYER)
+  locationPreference     String[]
+  moveInTimeline         MoveInTimeline?
+  preApprovalAmount      Decimal?           @db.Decimal(12, 2)
+  preApprovalStatus      PreApprovalStatus?
+  propertyTypePreference PropertyType[]
+  squareFeetMin          Int?
+  documents              Document[]
+  interactions           Interaction[]
+  assignedTo             User               @relation("LeadOwner", fields: [assignedToId], references: [id])
+  campaign               Campaign           @relation(fields: [campaignId], references: [id])
+  currentStage           PipelineStage      @relation(fields: [currentStageId], references: [id])
+  meetings               Meeting[]
+  notes                  Note[]
+  properties             PropertyInterest[]
+  tasks                  Task[]
+
+  @@index([campaignId, currentStageId])
+  @@index([assignedToId, isArchived])
+  @@index([email])
+  @@index([mobile])
+  @@index([leadType, currentStageId])
+  @@index([nextFollowUpAt])
+  @@index([score, priority])
+}
+
+model Property {
+  id                 String             @id @default(uuid())
+  address            String
+  city               String
+  state              String
+  zipCode            String
+  country            String             @default("USA")
+  propertyType       PropertyType
+  listingStatus      ListingStatus      @default(ACTIVE)
+  price              Decimal            @db.Decimal(12, 2)
+  bedrooms           Int
+  bathrooms          Decimal            @db.Decimal(3, 1)
+  squareFeet         Int?
+  lotSize            Decimal?           @db.Decimal(10, 2)
+  yearBuilt          Int?
+  mlsNumber          String?            @unique
+  description        String?
+  photos             String[]
+  virtualTourUrl     String?
+  hoaFees            Decimal?           @db.Decimal(10, 2)
+  propertyTax        Decimal?           @db.Decimal(10, 2)
+  features           String[]
+  listedById         String?
+  listedDate         DateTime?
+  soldDate           DateTime?
+  soldPrice          Decimal?           @db.Decimal(12, 2)
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+  campaignProperties CampaignProperty[]
+  listedBy           User?              @relation("PropertyListedBy", fields: [listedById], references: [id])
+  interests          PropertyInterest[]
+
+  @@index([listingStatus, propertyType])
+  @@index([city, state, zipCode])
+  @@index([price, bedrooms, bathrooms])
+  @@index([mlsNumber])
+}
+
+model PropertyInterest {
+  id         String         @id @default(uuid())
+  leadId     String
+  propertyId String
+  status     InterestStatus @default(INTERESTED)
+  notes      String?
+  viewedAt   DateTime?
+  rating     Int?
+  createdAt  DateTime       @default(now())
+  updatedAt  DateTime       @updatedAt
+  lead       Lead           @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  property   Property       @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  @@unique([leadId, propertyId])
+  @@index([leadId, status])
+  @@index([propertyId, status])
+}
+
+model CampaignProperty {
+  id         String   @id @default(uuid())
+  campaignId String
+  propertyId String
+  isFeatured Boolean  @default(false)
+  order      Int      @default(0)
+  notes      String?
+  addedAt    DateTime @default(now())
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  campaign   Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  property   Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  @@unique([campaignId, propertyId])
+  @@index([campaignId, order])
+  @@index([propertyId])
+  @@index([isFeatured])
+}
+
+model Interaction {
+  id           String          @id @default(uuid())
+  leadId       String
+  type         InteractionType
+  subject      String?
+  content      String?
+  direction    Direction       @default(OUTBOUND)
+  duration     Int?
+  recordingUrl String?
+  emailFrom    String?
+  emailTo      String?
+  emailCc      String?
+  phoneNumber  String?
+  createdById  String
+  occurredAt   DateTime        @default(now())
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+  createdBy    User            @relation("InteractionCreator", fields: [createdById], references: [id])
+  lead         Lead            @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@index([leadId, occurredAt])
+  @@index([type, occurredAt])
+  @@index([createdById])
+}
+
+model Meeting {
+  id            String            @id @default(uuid())
+  title         String
+  description   String?
+  location      String?
+  meetingUrl    String?
+  startTime     DateTime
+  endTime       DateTime
+  status        MeetingStatus     @default(SCHEDULED)
+  organizerId   String
+  leadId        String?
+  reminderSent  Boolean           @default(false)
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+  googleEventId String?
+  lead          Lead?             @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  organizer     User              @relation("MeetingOrganizer", fields: [organizerId], references: [id])
+  attendees     MeetingAttendee[]
+
+  @@index([organizerId, startTime])
+  @@index([startTime, status])
+  @@index([googleEventId])
+}
+
+model MeetingAttendee {
+  id            String                @id @default(uuid())
+  meetingId     String
+  userId        String
+  status        MeetingAttendeeStatus @default(PENDING)
+  googleEventId String?
+  respondedAt   DateTime?
+  createdAt     DateTime              @default(now())
+  updatedAt     DateTime              @updatedAt
+  meeting       Meeting               @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  user          User                  @relation("MeetingAttendee", fields: [userId], references: [id])
+
+  @@unique([meetingId, userId])
+  @@index([userId, status])
+  @@index([meetingId])
+}
+
+model Task {
+  id               String    @id @default(uuid())
+  title            String
+  description      String?
+  priority         Priority  @default(MEDIUM)
+  type             TaskType  @default(GENERAL)
+  isCompleted      Boolean   @default(false)
+  completedAt      DateTime?
+  assignedToId     String
+  dueDate          DateTime
+  leadId           String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  notificationSent Boolean   @default(false)
+  assignedTo       User      @relation("TaskAssignee", fields: [assignedToId], references: [id])
+  lead             Lead?     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@index([assignedToId, isCompleted])
+  @@index([dueDate, isCompleted])
+  @@index([assignedToId, dueDate, isCompleted])
+}
+
+model Document {
+  id         String   @id @default(uuid())
+  name       String
+  url        String
+  fileType   String
+  fileSize   Int?
+  isLink     Boolean  @default(false)
+  category   String?
+  leadId     String?
+  uploadedAt DateTime @default(now())
+  lead       Lead?    @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@index([leadId])
+}
+
+model Note {
+  id        String   @id @default(uuid())
+  content   String
+  isPinned  Boolean  @default(false)
+  authorId  String
+  leadId    String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  author    User     @relation("NoteAuthor", fields: [authorId], references: [id])
+  lead      Lead?    @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@index([leadId, createdAt])
+  @@index([isPinned])
+}
+
+model Folder {
+  id               String            @id @default(uuid())
+  name             String
+  type             FolderType        @default(SHARED)
+  parentId         String?
+  createdById      String
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  createdBy        User              @relation("FolderCreator", fields: [createdById], references: [id])
+  parent           Folder?           @relation("FolderHierarchy", fields: [parentId], references: [id], onDelete: Cascade)
+  children         Folder[]          @relation("FolderHierarchy")
+  managedDocuments ManagedDocument[]
+  sharedWithUsers  User[]            @relation("SharedFolders")
+
+  @@index([parentId])
+  @@index([type])
+  @@index([createdById])
+}
+
+model ManagedDocument {
+  id              String       @id @default(uuid())
+  name            String
+  s3Key           String       @unique
+  fileType        String
+  fileSize        Int
+  type            DocumentType @default(SHARED)
+  folderId        String?
+  uploadedById    String
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  folder          Folder?      @relation(fields: [folderId], references: [id], onDelete: Cascade)
+  uploadedBy      User         @relation("DocumentUploader", fields: [uploadedById], references: [id])
+  sharedWithUsers User[]       @relation("SharedDocuments")
+
+  @@index([folderId])
+  @@index([type])
+  @@index([uploadedById])
+  @@index([s3Key])
+}
+
+model PushSubscription {
+  id        String   @id @default(uuid())
+  userId    String
+  endpoint  String
+  p256dh    String
+  auth      String
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Workflow {
+  id                    String         @id @default(uuid())
+  name                  String
+  trigger               String
+  sourceCampaignId      String?
+  stageId               String?
+  tag                   String?
+  action                String
+  destinationCampaignId String?
+  destinationStageId    String?
+  assignmentOption      String?
+  status                String         @default("Active")
+  lastRun               DateTime?
+  createdById           String
+  createdAt             DateTime       @default(now())
+  updatedAt             DateTime       @updatedAt
+  createdBy             User           @relation("WorkflowCreator", fields: [createdById], references: [id])
+  destinationCampaign   Campaign?      @relation("WorkflowDestinationCampaign", fields: [destinationCampaignId], references: [id])
+  destinationStage      PipelineStage? @relation("WorkflowDestinationStage", fields: [destinationStageId], references: [id])
+  sourceCampaign        Campaign?      @relation("WorkflowSourceCampaign", fields: [sourceCampaignId], references: [id])
+  stage                 PipelineStage? @relation("WorkflowStage", fields: [stageId], references: [id])
+
+  @@index([createdById])
+  @@index([sourceCampaignId])
+  @@index([status])
+}
+
+enum Role {
+  ADMIN
+  MANAGER
+  TEAM_LEADER
+  TELE_CALLER
+  FIELD_EXECUTIVE
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum PipelineType {
+  BUYER
+  SELLER
+  INVESTOR
+  RENTER
+}
+
+enum CampaignStatus {
+  DRAFT
+  ACTIVE
+  PAUSED
+  COMPLETED
+  ARCHIVED
+}
+
+enum LeadType {
+  BUYER
+  SELLER
+  INVESTOR
+  RENTER
+  BUYER_SELLER
+}
+
+enum PropertyType {
+  HOUSE
+  CONDO
+  TOWNHOUSE
+  LAND
+  COMMERCIAL
+  MULTI_FAMILY
+  MANUFACTURED
+}
+
+enum MoveInTimeline {
+  ASAP
+  ONE_TO_THREE_MONTHS
+  THREE_TO_SIX_MONTHS
+  SIX_TO_TWELVE_MONTHS
+  OVER_A_YEAR
+  JUST_BROWSING
+}
+
+enum HousingStatus {
+  RENTING
+  OWNS_HOME
+  LIVING_WITH_FAMILY
+  OTHER
+}
+
+enum PreApprovalStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  PRE_QUALIFIED
+  PRE_APPROVED
+  NOT_NEEDED
+}
+
+enum ListingStatus {
+  ACTIVE
+  PENDING
+  SOLD
+  OFF_MARKET
+  COMING_SOON
+}
+
+enum InterestStatus {
+  INTERESTED
+  TOURED
+  FAVORITED
+  OFFER_MADE
+  OFFER_ACCEPTED
+  OFFER_REJECTED
+  NOT_INTERESTED
+}
+
+enum InteractionType {
+  CALL
+  EMAIL
+  SMS
+  WHATSAPP
+  MEETING
+  NOTE
+  PROPERTY_SHOWING
+  OFFER_SUBMITTED
+  STAGE_CHANGE
+  DOCUMENT_SENT
+  AUTOMATED_EMAIL
+  AUTOMATED_SMS
+}
+
+enum Direction {
+  INBOUND
+  OUTBOUND
+}
+
+enum MeetingStatus {
+  SCHEDULED
+  COMPLETED
+  CANCELLED
+  NO_SHOW
+}
+
+enum MeetingAttendeeStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+}
+
+enum TaskType {
+  GENERAL
+  CALL
+  EMAIL
+  FOLLOW_UP
+  PROPOSAL
+  CONTRACT
+}
+
+enum FolderType {
+  SHARED
+  PERSONAL
+}
+
+enum DocumentType {
+  SHARED
+  PERSONAL
+}
