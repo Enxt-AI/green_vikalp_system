@@ -259,6 +259,7 @@ export type Lead = {
   isArchived: boolean;
   archivedAt: string | null;
   archivedReason: string | null;
+  customFields?: Record<string, any>;
   interactions?: Interaction[];
   _count?: {
     interactions: number;
