@@ -193,7 +193,7 @@ export default function TemplateWizardPage() {
           console.log("Template import - columnMappings:", state.leads.columnMappings);
 
           const processedMappings = state.leads.columnMappings
-            .filter((m: any) => m.targetField)
+            .filter((m: any) => m.targetField && m.targetField !== "__ignore__")
             .map((m: any) => {
               if (m.targetField === "__custom__" || m.isCustomField) {
                 const customName = m.customFieldName || m.sourceColumn;
@@ -770,7 +770,7 @@ function LeadsStep({ state, onChange }: { state: any, onChange: (val: any) => vo
 
   const LEAD_FIELDS = [
     { value: "firstName", label: "First Name *" },
-    { value: "lastName", label: "Last Name *" },
+    { value: "lastName", label: "Last Name" },
     { value: "email", label: "Email" },
     { value: "mobile", label: "Mobile" },
     { value: "alternatePhone", label: "Alternate Phone" },
@@ -784,6 +784,7 @@ function LeadsStep({ state, onChange }: { state: any, onChange: (val: any) => vo
     { value: "tags", label: "Tags" },
     { value: "initialNotes", label: "Initial Notes" },
     { value: "__custom__", label: "➕ Custom Field" },
+    { value: "__ignore__", label: "🚫 Ignore this column" },
   ];
 
   useEffect(() => {

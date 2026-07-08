@@ -46,7 +46,7 @@ type ColumnMapping = {
 
 const LEAD_FIELDS = [
   { value: "firstName", label: "First Name *", type: "text" },
-  { value: "lastName", label: "Last Name *", type: "text" },
+  { value: "lastName", label: "Last Name", type: "text" },
   { value: "email", label: "Email", type: "text" },
   { value: "mobile", label: "Mobile", type: "text" },
   { value: "alternatePhone", label: "Alternate Phone", type: "text" },
@@ -66,6 +66,7 @@ const LEAD_FIELDS = [
   { value: "initialNotes", label: "Initial Notes", type: "text" },
   { value: "nextFollowUpAt", label: "Next Follow-up Date", type: "date" },
   { value: "__custom__", label: "➕ Custom Field (store as custom data)", type: "custom" },
+  { value: "__ignore__", label: "🚫 Ignore this column", type: "system" },
 ];
 
 export function ImportLeadsDialog({
@@ -366,10 +367,9 @@ export function ImportLeadsDialog({
   const handleImport = async () => {
     // Validate required mappings
     const hasFirstName = columnMappings.some(m => m.targetField === "firstName");
-    const hasLastName = columnMappings.some(m => m.targetField === "lastName");
 
-    if (!hasFirstName || !hasLastName) {
-      toast.error("You must map firstName and lastName columns (required fields)");
+    if (!hasFirstName) {
+      toast.error("You must map the First Name column (required field)");
       return;
     }
 
@@ -388,9 +388,9 @@ export function ImportLeadsDialog({
     try {
       const rowsToImport = allRows.length > 0 ? allRows : previewData;
 
-      // Process column mappings to include custom field info
+      // Process column mappings to include custom field info and filter out ignored
       const processedMappings = columnMappings
-        .filter(m => m.targetField)
+        .filter(m => m.targetField && m.targetField !== "__ignore__")
         .map(m => {
           if (m.targetField === "__custom__") {
             return {
