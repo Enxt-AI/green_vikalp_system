@@ -21,7 +21,6 @@ const navigation: NavItem[] = [
   { name: "Pipelines", href: "/dashboard/pipelines", icon: GitBranchIcon },
   { name: "Campaigns", href: "/dashboard/campaigns", icon: MegaphoneIcon },
   { name: "Leads", href: "/dashboard/leads", icon: UsersIcon },
-  { name: "Properties", href: "/dashboard/properties", icon: BuildingIcon },
   { name: "Tasks", href: "/dashboard/tasks", icon: CheckCircleIcon },
   { name: "Meetings", href: "/dashboard/meetings", icon: CalendarIcon },
   { name: "Documents", href: "/dashboard/documents", icon: FolderIcon },
