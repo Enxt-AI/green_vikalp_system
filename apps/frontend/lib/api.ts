@@ -269,6 +269,7 @@ export type Lead = {
     notes: number;
     documents: number;
   };
+  customFields?: Record<string, any>;
   createdAt: string;
   updatedAt: string;
 };

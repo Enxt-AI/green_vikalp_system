@@ -94,6 +94,9 @@ export function EditLeadDialog({
   const [currentStageId, setCurrentStageId] = useState("");
   const [assignedToId, setAssignedToId] = useState("");
   const [nextFollowUpAt, setNextFollowUpAt] = useState("");
+  const [customFields, setCustomFields] = useState<Record<string, any>>({});
+  const [newCustomFieldKey, setNewCustomFieldKey] = useState("");
+  const [newCustomFieldValue, setNewCustomFieldValue] = useState("");
 
   // Load lead data when dialog opens
   useEffect(() => {
@@ -133,6 +136,7 @@ export function EditLeadDialog({
       setCurrentStageId(data.currentStageId);
       setAssignedToId(data.assignedToId);
       setNextFollowUpAt(data.nextFollowUpAt ? new Date(data.nextFollowUpAt).toISOString().split('T')[0] : "");
+      setCustomFields(data.customFields || {});
     } catch (error: any) {
       toast.error("Failed to load lead");
       setDialogOpen(false);
@@ -185,6 +189,22 @@ export function EditLeadDialog({
     setTags(tags.filter(t => t !== tag));
   };
 
+  const addCustomField = () => {
+    if (newCustomFieldKey.trim() && newCustomFieldValue.trim()) {
+      setCustomFields(prev => ({ ...prev, [newCustomFieldKey.trim()]: newCustomFieldValue.trim() }));
+      setNewCustomFieldKey("");
+      setNewCustomFieldValue("");
+    }
+  };
+
+  const removeCustomField = (key: string) => {
+    setCustomFields(prev => {
+      const updated = { ...prev };
+      delete updated[key];
+      return updated;
+    });
+  };
+
   const handleSave = async () => {
     if (!firstName.trim() || !lastName.trim()) {
       toast.error("First name and last name are required");
@@ -216,6 +236,7 @@ export function EditLeadDialog({
         currentStageId: currentStageId !== lead?.currentStageId ? currentStageId : undefined,
         assignedToId: assignedToId !== lead?.assignedToId ? assignedToId : undefined,
         nextFollowUpAt: nextFollowUpAt || undefined,
+        customFields: Object.keys(customFields).length > 0 ? customFields : undefined,
       };
 
       await leads.update(leadId, updateData);
@@ -615,6 +636,49 @@ export function EditLeadDialog({
                     }
                   }}
                 />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Custom Fields</Label>
+              {Object.keys(customFields).length > 0 && (
+                <div className="flex flex-wrap gap-2 mb-2">
+                  {Object.entries(customFields).map(([key, value]) => (
+                    <Badge key={key} variant="outline" className="bg-purple-50 text-purple-700 border-purple-200">
+                      {key}: {String(value)}
+                      <button
+                        type="button"
+                        onClick={() => removeCustomField(key)}
+                        className="ml-2 text-xs hover:text-red-600"
+                      >
+                        ×
+                      </button>
+                    </Badge>
+                  ))}
+                </div>
+              )}
+              <div className="flex gap-2">
+                <Input
+                  placeholder="Field name..."
+                  value={newCustomFieldKey}
+                  onChange={(e) => setNewCustomFieldKey(e.target.value)}
+                  className="flex-1"
+                />
+                <Input
+                  placeholder="Value..."
+                  value={newCustomFieldValue}
+                  onChange={(e) => setNewCustomFieldValue(e.target.value)}
+                  className="flex-1"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={addCustomField}
+                  disabled={!newCustomFieldKey.trim() || !newCustomFieldValue.trim()}
+                >
+                  Add
+                </Button>
               </div>
             </div>
           </div>

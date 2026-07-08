@@ -85,7 +85,12 @@ export default function TemplateWizardPage() {
       integrationType: "NONE" as "NONE" | "GOOGLE_SHEETS" | "GOOGLE_FORMS" | "GOOGLE_DRIVE",
       integrationUrl: "",
       integrationFolderId: "",
-      integrationFileId: ""
+      integrationFileId: "",
+      fileHeaders: [] as string[],
+      filePreview: [] as Record<string, any>[],
+      allRows: [] as Record<string, any>[],
+      showSchemaMapping: false,
+      columnMappings: [] as { sourceColumn: string; targetField: string; transformFunction?: string; isCustomField?: boolean; customFieldName?: string }[],
     },
     workflows: [{ name: "", trigger: "call_connected", action: "change_stage", destinationStageIndex: 1 }],
     document: { name: "", file: null as File | null }
@@ -149,7 +154,7 @@ export default function TemplateWizardPage() {
         if (state.leads.items.length > 0) {
           const validLeads = state.leads.items.filter((lead: any) => lead.firstName);
           if (validLeads.length > 0) {
-            await leads.bulkImport({
+            const res: any = await leads.bulkImport({
               importData: {
                 campaignId,
                 defaultStageId: firstStageId,
@@ -173,11 +178,75 @@ export default function TemplateWizardPage() {
                 assignmentMode: "AUTO",
               },
             });
+            if (res && res.summary && res.summary.failed > 0) {
+              toast.error(`Failed to import ${res.summary.failed} manual leads. Please ensure you provide First Name and either Email or Mobile.`, { id: "template-creation-error" });
+            }
           }
         }
 
-        // CSV/Excel Lead Upload
-        if (state.leads.file) {
+        // CSV/Excel Lead Upload with Schema Mapping
+        if (state.leads.file && state.leads.columnMappings && state.leads.columnMappings.length > 0) {
+          toast.loading("Importing leads from file...", { id: "template-creation" });
+
+          const rowsToImport = state.leads.allRows && state.leads.allRows.length > 0 ? state.leads.allRows : state.leads.filePreview;
+          console.log("Template import - rows to import:", rowsToImport?.length, "allRows:", state.leads.allRows?.length, "filePreview:", state.leads.filePreview?.length);
+          console.log("Template import - columnMappings:", state.leads.columnMappings);
+
+          const processedMappings = state.leads.columnMappings
+            .filter((m: any) => m.targetField)
+            .map((m: any) => {
+              if (m.targetField === "__custom__" || m.isCustomField) {
+                const customName = m.customFieldName || m.sourceColumn;
+                return {
+                  sourceColumn: m.sourceColumn,
+                  targetField: customName,
+                  isCustomField: true,
+                  customFieldName: customName,
+                  transformFunction: "NONE"
+                };
+              }
+              return { ...m, transformFunction: m.transformFunction || "NONE" };
+            });
+
+          console.log("Template import - processedMappings:", processedMappings);
+
+          if (rowsToImport && rowsToImport.length > 0 && processedMappings.length > 0) {
+            try {
+              const result: any = await leads.bulkImport({
+                importData: {
+                  campaignId,
+                  defaultStageId: firstStageId,
+                  defaultPriority: "MEDIUM",
+                  duplicateHandling: "SKIP",
+                  duplicateCheckFields: ["email"],
+                  columnMappings: processedMappings,
+                  rows: rowsToImport,
+                  assignmentMode: "AUTO",
+                },
+              });
+              console.log("Template import - result:", result);
+              if (result && result.summary) {
+                if (result.summary.successful > 0) {
+                  toast.success(`Imported ${result.summary.successful} leads from file.`, { id: "template-creation" });
+                }
+                if (result.summary.failed > 0 || result.summary.skipped > 0) {
+                  toast.error(`Failed to import ${result.summary.failed} leads. Skipped ${result.summary.skipped} duplicates. Ensure leads have First Name and either Email or Mobile mapped.`, { id: "template-creation-error" });
+                }
+                if (result.summary.successful === 0 && result.summary.failed > 0) {
+                  throw new Error(`Failed to import any leads. ${result.summary.failed} failed. Please ensure mapped columns include First Name and Email/Mobile.`);
+                }
+              }
+            } catch (err: any) {
+              console.error("File import error:", err);
+              toast.error(err.message || "Failed to import leads from file", { id: "template-creation" });
+              // Propagate error to stop wizard completion if zero leads imported
+              throw err; 
+            }
+          } else {
+            console.error("Template import - No rows or mappings to import");
+            toast.error("No data to import. Please check your file and mappings.", { id: "template-creation" });
+          }
+        } else if (state.leads.file) {
           const formData = new FormData();
           formData.append("campaignId", campaignId);
           formData.append("stageId", firstStageId);
@@ -370,7 +439,7 @@ export default function TemplateWizardPage() {
       <div className="w-full py-6 relative">
         <div className="absolute top-[46px] left-0 w-full h-0.5 bg-neutral-200 -translate-y-1/2 z-0"></div>
         <div
-          className="absolute top-[20px] left-0 h-0.5 bg-brand-500 -translate-y-1/2 z-0 transition-all duration-300"
+          className="absolute top-[46px] left-0 h-0.5 bg-brand-500 -translate-y-1/2 z-0 transition-all duration-300"
           style={{ width: `${(currentStep / (STEPS.length - 1)) * 100}%` }}
         ></div>
 
@@ -696,6 +765,26 @@ function LeadsStep({ state, onChange }: { state: any, onChange: (val: any) => vo
 
   const [files, setFiles] = useState<{ id: string; name: string; mimeType: string }[]>([]);
   const [loadingFiles, setLoadingFiles] = useState(false);
+  const [parsingFile, setParsingFile] = useState(false);
+  const [customFieldNames, setCustomFieldNames] = useState<Record<string, string>>({});
+
+  const LEAD_FIELDS = [
+    { value: "firstName", label: "First Name *" },
+    { value: "lastName", label: "Last Name *" },
+    { value: "email", label: "Email" },
+    { value: "mobile", label: "Mobile" },
+    { value: "alternatePhone", label: "Alternate Phone" },
+    { value: "leadType", label: "Lead Type" },
+    { value: "budgetMin", label: "Budget Min" },
+    { value: "budgetMax", label: "Budget Max" },
+    { value: "locationPreference", label: "Location Preference" },
+    { value: "bedroomsMin", label: "Min Bedrooms" },
+    { value: "bathroomsMin", label: "Min Bathrooms" },
+    { value: "squareFeetMin", label: "Min Square Feet" },
+    { value: "tags", label: "Tags" },
+    { value: "initialNotes", label: "Initial Notes" },
+    { value: "__custom__", label: "➕ Custom Field" },
+  ];
 
   useEffect(() => {
     if (state.integrationType === "GOOGLE_DRIVE" && folders.length === 0) {
@@ -734,9 +823,75 @@ function LeadsStep({ state, onChange }: { state: any, onChange: (val: any) => vo
     onChange({ ...state, items: state.items.filter((_: any, i: number) => i !== idx) });
   };
 
+  const parseUploadedFile = async (file: File) => {
+    setParsingFile(true);
+    try {
+      const result = await leads.parseImport({
+        sourceType: "FILE",
+        file,
+      });
+
+      const headers = result.headers;
+      const preview = result.preview;
+
+      const autoMappings = headers.map((h): { sourceColumn: string; targetField: string; transformFunction?: string; isCustomField?: boolean; customFieldName?: string } => {
+        const lower = h.toLowerCase();
+        if (lower.includes("first") && lower.includes("name")) return { sourceColumn: h, targetField: "firstName" };
+        if (lower.includes("last") && lower.includes("name")) return { sourceColumn: h, targetField: "lastName" };
+        if (lower.includes("email")) return { sourceColumn: h, targetField: "email" };
+        if (lower.includes("mobile") || lower.includes("phone") || lower.includes("contact")) return { sourceColumn: h, targetField: "mobile" };
+        if (lower.includes("budget") && lower.includes("min")) return { sourceColumn: h, targetField: "budgetMin" };
+        if (lower.includes("budget") && lower.includes("max")) return { sourceColumn: h, targetField: "budgetMax" };
+        if (lower.includes("type")) return { sourceColumn: h, targetField: "leadType" };
+        if (lower.includes("location") || lower.includes("area")) return { sourceColumn: h, targetField: "locationPreference" };
+        if (lower.includes("tag")) return { sourceColumn: h, targetField: "tags" };
+        if (lower.includes("note")) return { sourceColumn: h, targetField: "initialNotes" };
+        return { sourceColumn: h, targetField: "__custom__", isCustomField: true, customFieldName: h };
+      });
+
+      onChange({
+        ...state,
+        file,
+        fileHeaders: headers,
+        filePreview: preview,
+        allRows: result.allRows || result.preview,
+        showSchemaMapping: true,
+        columnMappings: autoMappings,
+      });
+
+      toast.success(`Parsed ${result.totalRows} rows`);
+    } catch (error: any) {
+      console.error("Error parsing file:", error);
+      toast.error(error.message || "Failed to parse file");
+    } finally {
+      setParsingFile(false);
+    }
+  };
+
+  const updateMapping = (sourceColumn: string, targetField: string) => {
+    const newMappings = state.columnMappings.map((m: any) =>
+      m.sourceColumn === sourceColumn ? { 
+        ...m, 
+        targetField,
+        isCustomField: targetField === "__custom__"
+      } : m
+    );
+    if (!newMappings.find((m: any) => m.sourceColumn === sourceColumn)) {
+      newMappings.push({ sourceColumn, targetField, isCustomField: targetField === "__custom__" });
+    }
+    onChange({ ...state, columnMappings: newMappings });
+  };
+
+  const updateCustomFieldName = (sourceColumn: string, name: string) => {
+    const newMappings = state.columnMappings.map((m: any) =>
+      m.sourceColumn === sourceColumn ? { ...m, customFieldName: name } : m
+    );
+    onChange({ ...state, columnMappings: newMappings });
+  };
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
-      onChange({ ...state, file: e.target.files[0] });
+      parseUploadedFile(e.target.files[0]);
     }
   };
 
@@ -749,7 +904,7 @@ function LeadsStep({ state, onChange }: { state: any, onChange: (val: any) => vo
           <Button variant="outline" size="sm" onClick={addLead}><Plus className="w-4 h-4 mr-1" /> Add Manual Lead</Button>
         </div>
 
-        {state.file && (
+        {state.file && !state.showSchemaMapping && (
           <div className="flex items-center justify-between p-4 bg-brand-50 border border-brand-200 rounded-xl">
             <div className="flex items-center gap-3">
               <FileSpreadsheet className="w-8 h-8 text-brand-500" />
@@ -761,6 +916,80 @@ function LeadsStep({ state, onChange }: { state: any, onChange: (val: any) => vo
             <Button variant="ghost" size="sm" className="text-red-500 hover:text-red-700 hover:bg-red-50" onClick={() => onChange({ ...state, file: null })}>
               <X className="w-4 h-4" />
             </Button>
+          </div>
+        )}
+
+        {state.showSchemaMapping && state.fileHeaders.length > 0 && (
+          <div className="space-y-4 border border-brand-200 rounded-xl p-4 bg-brand-50">
+            <div className="flex items-center justify-between">
+              <div>
+                <h4 className="font-semibold text-neutral-900">Schema Mapping</h4>
+                <p className="text-xs text-neutral-600">Map columns from your file to lead fields</p>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-red-500 hover:text-red-700 hover:bg-red-50"
+                onClick={() => onChange({ ...state, file: null, showSchemaMapping: false, fileHeaders: [], columnMappings: [] })}
+              >
+                <X className="w-4 h-4 mr-1" /> Remove File
+              </Button>
+            </div>
+
+            <div className="bg-white rounded-lg border overflow-hidden">
+              <table className="w-full text-sm">
+                <thead className="bg-neutral-100 border-b">
+                  <tr>
+                    <th className="text-left p-2 font-medium">Source Column</th>
+                    <th className="text-left p-2 font-medium">Maps To</th>
+                    <th className="text-left p-2 font-medium">Preview</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {state.fileHeaders.map((header: string) => {
+                    const mapping = state.columnMappings.find((m: any) => m.sourceColumn === header);
+                    const previewValue = state.filePreview[0]?.[header] || "";
+                    
+                    return (
+                      <tr key={header} className="border-b last:border-0">
+                        <td className="p-2 font-medium">{header}</td>
+                        <td className="p-2">
+                          <select
+                            value={mapping?.targetField || ""}
+                            onChange={(e) => updateMapping(header, e.target.value)}
+                            className="w-full px-2 py-1 rounded border border-neutral-300 text-sm"
+                          >
+                            <option value="">Skip</option>
+                            {LEAD_FIELDS.map(field => (
+                              <option key={field.value} value={field.value}>{field.label}</option>
+                            ))}
+                          </select>
+                          {mapping?.targetField === "__custom__" && (
+                            <input
+                              type="text"
+                              placeholder="Custom field name"
+                              value={mapping.customFieldName || ""}
+                              onChange={(e) => updateCustomFieldName(header, e.target.value)}
+                              className="mt-1 w-full px-2 py-1 rounded border border-purple-300 text-sm"
+                            />
+                          )}
+                        </td>
+                        <td className="p-2 text-neutral-600 max-w-[200px] truncate">{String(previewValue)}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="flex items-center gap-2 text-xs text-brand-700">
+              <Badge variant="outline" className="bg-brand-50">
+                {state.fileHeaders.length} columns
+              </Badge>
+              <Badge variant="outline" className="bg-brand-50">
+                {state.filePreview.length} preview rows
+              </Badge>
+            </div>
           </div>
         )}
 

@@ -40,6 +40,8 @@ type ColumnMapping = {
   sourceColumn: string;
   targetField: string;
   transformFunction: "NONE" | "UPPERCASE" | "LOWERCASE" | "TRIM" | "SPLIT_COMMA" | "PARSE_NUMBER" | "PARSE_DATE";
+  isCustomField?: boolean;
+  customFieldName?: string;
 };
 
 const LEAD_FIELDS = [
@@ -63,6 +65,7 @@ const LEAD_FIELDS = [
   { value: "tags", label: "Tags (comma-separated)", type: "array" },
   { value: "initialNotes", label: "Initial Notes", type: "text" },
   { value: "nextFollowUpAt", label: "Next Follow-up Date", type: "date" },
+  { value: "__custom__", label: "➕ Custom Field (store as custom data)", type: "custom" },
 ];
 
 export function ImportLeadsDialog({
@@ -106,6 +109,7 @@ export function ImportLeadsDialog({
 
   // Mapping step
   const [columnMappings, setColumnMappings] = useState<ColumnMapping[]>([]);
+  const [customFieldNames, setCustomFieldNames] = useState<Record<string, string>>({});
 
   // Results
   const [importResults, setImportResults] = useState<any>(null);
@@ -169,6 +173,7 @@ export function ImportLeadsDialog({
   useEffect(() => {
     if (headers.length > 0 && step === "mapping") {
       const detectedMappings: ColumnMapping[] = [];
+      const newCustomFieldNames: Record<string, string> = {};
 
       headers.forEach(header => {
         const lowerHeader = header.toLowerCase().trim();
@@ -238,10 +243,20 @@ export function ImportLeadsDialog({
             targetField,
             transformFunction: transform,
           });
+        } else {
+          detectedMappings.push({
+            sourceColumn: header,
+            targetField: "__custom__",
+            transformFunction: "NONE",
+            isCustomField: true,
+            customFieldName: header,
+          });
+          newCustomFieldNames[header] = header;
         }
       });
 
       setColumnMappings(detectedMappings);
+      setCustomFieldNames(prev => ({ ...prev, ...newCustomFieldNames }));
     }
   }, [headers, step]);
 
@@ -326,7 +341,11 @@ export function ImportLeadsDialog({
       if (existing) {
         return prev.map(m =>
           m.sourceColumn === sourceColumn
-            ? { ...m, [field]: value }
+            ? { 
+                ...m, 
+                [field]: value,
+                ...(field === "targetField" ? { isCustomField: value === "__custom__" } : {})
+              }
             : m
         );
       } else {
@@ -334,6 +353,7 @@ export function ImportLeadsDialog({
           sourceColumn,
           targetField: field === "targetField" ? value : "",
           transformFunction: field === "transformFunction" ? value as any : "NONE",
+          ...(field === "targetField" ? { isCustomField: value === "__custom__" } : {})
         }];
       }
     });
@@ -353,11 +373,35 @@ export function ImportLeadsDialog({
       return;
     }
 
+    // Validate custom field names
+    const customMappingsWithoutName = columnMappings.filter(
+      m => m.targetField === "__custom__" && !customFieldNames[m.sourceColumn]
+    );
+    if (customMappingsWithoutName.length > 0) {
+      toast.error("Please provide a name for all custom field mappings");
+      return;
+    }
+
     setIsLoading(true);
     setStep("importing");
 
     try {
       const rowsToImport = allRows.length > 0 ? allRows : previewData;
+
+      // Process column mappings to include custom field info
+      const processedMappings = columnMappings
+        .filter(m => m.targetField)
+        .map(m => {
+          if (m.targetField === "__custom__") {
+            return {
+              ...m,
+              targetField: customFieldNames[m.sourceColumn] || m.sourceColumn,
+              isCustomField: true,
+              customFieldName: customFieldNames[m.sourceColumn] || m.sourceColumn,
+            };
+          }
+          return m;
+        });
 
       const result = await leads.bulkImport({
         importData: {
@@ -367,7 +411,7 @@ export function ImportLeadsDialog({
           defaultPriority,
           duplicateHandling,
           duplicateCheckFields,
-          columnMappings: columnMappings.filter(m => m.targetField),
+          columnMappings: processedMappings,
           rows: rowsToImport,
           assignmentMode,
         },
@@ -737,6 +781,7 @@ export function ImportLeadsDialog({
 
                       const availableTransforms = getAvailableTransforms();
                       const showTransform = mapping?.targetField && !shouldHideTransform && availableTransforms.length > 1;
+                      const isCustomField = mapping?.targetField === "__custom__";
 
                       return (
                         <TableRow key={header}>
@@ -757,9 +802,17 @@ export function ImportLeadsDialog({
                                 ))}
                               </SelectContent>
                             </Select>
+                            {isCustomField && (
+                              <Input
+                                className="mt-2"
+                                placeholder="Custom field name..."
+                                value={customFieldNames[header] || ""}
+                                onChange={(e) => setCustomFieldNames(prev => ({ ...prev, [header]: e.target.value }))}
+                              />
+                            )}
                           </TableCell>
                           <TableCell>
-                            {showTransform && (
+                            {showTransform && !isCustomField && (
                               <Select
                                 value={mapping.transformFunction}
                                 onValueChange={(v) => updateMapping(header, "transformFunction", v)}

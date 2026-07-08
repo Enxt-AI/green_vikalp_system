@@ -237,6 +237,7 @@ export const createLeadSchema = z.object({
   assignedToId: z.string().uuid("Invalid user ID").optional(),
   initialNotes: z.string().max(2000).optional().nullable(),
   nextFollowUpAt: z.string().optional().nullable(),
+  customFields: z.record(z.string(), z.any()).optional().nullable(),
 });
 
 export const updateLeadSchema = z.object({
@@ -265,6 +266,7 @@ export const updateLeadSchema = z.object({
   nextFollowUpAt: z.string().optional().nullable(),
   isArchived: z.boolean().optional(),
   archivedReason: z.string().max(500).optional().nullable(),
+  customFields: z.record(z.string(), z.any()).optional().nullable(),
 });
 
 // ================================
@@ -565,6 +567,8 @@ export const importMappingSchema = z.object({
   sourceColumn: z.string().min(1, "Source column is required"),
   targetField: z.string().min(1, "Target field is required"),
   transformFunction: z.enum(["NONE", "UPPERCASE", "LOWERCASE", "TRIM", "SPLIT_COMMA", "PARSE_NUMBER", "PARSE_DATE"]).optional().default("NONE"),
+  isCustomField: z.boolean().optional().default(false),
+  customFieldName: z.string().optional(),
 });
 
 export const bulkImportLeadsSchema = z.object({

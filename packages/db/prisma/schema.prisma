@@ -151,6 +151,7 @@ model Lead {
   preApprovalStatus      PreApprovalStatus?
   propertyTypePreference PropertyType[]
   squareFeetMin          Int?
+  customFields           Json?
   documents              Document[]
   interactions           Interaction[]
   assignedTo             User               @relation("LeadOwner", fields: [assignedToId], references: [id])

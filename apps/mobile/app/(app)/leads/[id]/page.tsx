@@ -475,13 +475,60 @@ export default function LeadDetailsPage() {
                     <span className="text-sm font-bold text-brand-900">{lead.mobile || "N/A"}</span>
                   </div>
                   <div className="flex justify-between border-b border-brand-50 pb-2">
+                    <span className="text-xs text-brand-500 font-semibold uppercase">Email</span>
+                    <span className="text-sm font-bold text-brand-900">{lead.email || "N/A"}</span>
+                  </div>
+                  <div className="flex justify-between border-b border-brand-50 pb-2">
                     <span className="text-xs text-brand-500 font-semibold uppercase">Campaign</span>
                     <span className="text-sm font-bold text-brand-900">{lead.campaign?.name || "N/A"}</span>
                   </div>
-                  <div className="flex justify-between pb-2">
+                  <div className="flex justify-between border-b border-brand-50 pb-2">
                     <span className="text-xs text-brand-500 font-semibold uppercase">Created At</span>
                     <span className="text-sm font-bold text-brand-900">{new Date(lead.createdAt).toLocaleDateString()}</span>
                   </div>
+
+                  {lead.priority && (
+                    <div className="flex justify-between border-b border-brand-50 pb-2">
+                      <span className="text-xs text-brand-500 font-semibold uppercase">Priority</span>
+                      <span className="text-sm font-bold text-brand-900">{lead.priority}</span>
+                    </div>
+                  )}
+
+                  {lead.moveInTimeline && (
+                    <div className="flex justify-between border-b border-brand-50 pb-2">
+                      <span className="text-xs text-brand-500 font-semibold uppercase">Move In Timeline</span>
+                      <span className="text-sm font-bold text-brand-900">{lead.moveInTimeline.replace(/_/g, ' ')}</span>
+                    </div>
+                  )}
+
+                  {lead.locationPreference && lead.locationPreference.length > 0 && (
+                    <div className="flex justify-between border-b border-brand-50 pb-2">
+                      <span className="text-xs text-brand-500 font-semibold uppercase">Location</span>
+                      <span className="text-sm font-bold text-brand-900 text-right">{lead.locationPreference.join(', ')}</span>
+                    </div>
+                  )}
+
+                  {lead.initialNotes && (
+                    <div className="flex flex-col border-b border-brand-50 pb-2">
+                      <span className="text-xs text-brand-500 font-semibold uppercase mb-1">Notes</span>
+                      <span className="text-sm font-medium text-brand-900">{lead.initialNotes}</span>
+                    </div>
+                  )}
+
+                  {/* Render Custom Fields dynamically */}
+                  {lead.customFields && Object.keys(lead.customFields).length > 0 && (
+                    <>
+                      <div className="pt-2 pb-1">
+                        <h4 className="text-xs font-bold text-brand-800 uppercase tracking-wider">Custom Fields</h4>
+                      </div>
+                      {Object.entries(lead.customFields).map(([key, value], idx) => (
+                        <div key={key} className={`flex justify-between ${idx !== Object.keys(lead.customFields!).length - 1 ? "border-b border-brand-50 pb-2" : "pb-2"}`}>
+                          <span className="text-xs text-brand-500 font-semibold uppercase">{key}</span>
+                          <span className="text-sm font-bold text-brand-900 max-w-[60%] text-right">{String(value)}</span>
+                        </div>
+                      ))}
+                    </>
+                  )}
                 </div>
               )}
 

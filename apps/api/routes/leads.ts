@@ -410,6 +410,7 @@ router.post("/", authenticate, async (req, res) => {
         assignedToId: validatedData.assignedToId || userId,
         initialNotes: validatedData.initialNotes,
         nextFollowUpAt: validatedData.nextFollowUpAt ? new Date(validatedData.nextFollowUpAt) : null,
+        customFields: validatedData.customFields,
       },
       include: {
         campaign: {
@@ -1012,11 +1013,13 @@ router.post("/import/bulk", authenticate, upload.single("file"), async (req, res
     }
 
     // Create mapping lookup
-    const mappingLookup = new Map<string, { targetField: string; transform: string }>();
+    const mappingLookup = new Map<string, { targetField: string; transform: string; isCustomField?: boolean; customFieldName?: string }>();
     columnMappings.forEach((m) => {
       mappingLookup.set(m.sourceColumn, {
         targetField: m.targetField,
         transform: m.transformFunction || "NONE",
+        isCustomField: m.isCustomField,
+        customFieldName: m.customFieldName,
       });
     });
 
@@ -1144,27 +1147,49 @@ router.post("/import/bulk", authenticate, upload.single("file"), async (req, res
           priority: defaultPriority,
         };
 
+        const customFieldsData: Record<string, any> = {};
+
+        // Standard fields in Lead model (not custom)
+        const standardFields = [
+          "firstName", "lastName", "email", "mobile", "alternatePhone", "leadType",
+          "propertyTypePreference", "budgetMin", "budgetMax", "locationPreference",
+          "bedroomsMin", "bathroomsMin", "squareFeetMin", "moveInTimeline",
+          "currentHousingStatus", "preApprovalStatus", "preApprovalAmount",
+          "priority", "tags", "initialNotes", "nextFollowUpAt"
+        ];
+
         // Apply column mappings
         for (const [sourceCol, mapping] of mappingLookup.entries()) {
           const rawValue = row[sourceCol];
           const transformedValue = transformValue(rawValue, mapping.transform, mapping.targetField);
 
           if (transformedValue !== null && transformedValue !== undefined) {
-            leadData[mapping.targetField] = transformedValue;
+            // Check if this is a custom field
+            if (mapping.isCustomField || !standardFields.includes(mapping.targetField)) {
+              const fieldName = mapping.customFieldName || mapping.targetField;
+              customFieldsData[fieldName] = transformedValue;
+            } else {
+              leadData[mapping.targetField] = transformedValue;
 
-            // Protect Enum fields from crashing Prisma if user maps a random string/number
-            const validEnums: Record<string, string[]> = {
-              leadType: ["BUYER", "SELLER", "INVESTOR", "RENTER", "BUYER_SELLER"],
-              priority: ["LOW", "MEDIUM", "HIGH", "URGENT"],
-              moveInTimeline: ["ASAP", "ONE_TO_THREE_MONTHS", "THREE_TO_SIX_MONTHS", "SIX_TO_TWELVE_MONTHS", "OVER_A_YEAR", "JUST_BROWSING"],
-              currentHousingStatus: ["RENTING", "OWNS_HOME", "LIVING_WITH_FAMILY", "OTHER"],
-              preApprovalStatus: ["NOT_STARTED", "IN_PROGRESS", "PRE_QUALIFIED", "PRE_APPROVED", "NOT_NEEDED"],
-            };
+              // Protect Enum fields from crashing Prisma if user maps a random string/number
+              const validEnums: Record<string, string[]> = {
+                leadType: ["BUYER", "SELLER", "INVESTOR", "RENTER", "BUYER_SELLER"],
+                priority: ["LOW", "MEDIUM", "HIGH", "URGENT"],
+                moveInTimeline: ["ASAP", "ONE_TO_THREE_MONTHS", "THREE_TO_SIX_MONTHS", "SIX_TO_TWELVE_MONTHS", "OVER_A_YEAR", "JUST_BROWSING"],
+                currentHousingStatus: ["RENTING", "OWNS_HOME", "LIVING_WITH_FAMILY", "OTHER"],
+                preApprovalStatus: ["NOT_STARTED", "IN_PROGRESS", "PRE_QUALIFIED", "PRE_APPROVED", "NOT_NEEDED"],
+              };
 
-            if (validEnums[mapping.targetField] && !validEnums[mapping.targetField].includes(String(transformedValue))) {
-              delete leadData[mapping.targetField];
+              if (validEnums[mapping.targetField] && !validEnums[mapping.targetField].includes(String(transformedValue))) {
+                delete leadData[mapping.targetField];
+              }
             }
           }
+        }
+
+        // Attach custom fields if any
+        if (Object.keys(customFieldsData).length > 0) {
+          leadData.customFields = customFieldsData;
         }
 
         // Ensure required fields (First name, and either Email or Mobile)

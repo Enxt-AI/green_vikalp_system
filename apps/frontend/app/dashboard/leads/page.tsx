@@ -1,11 +1,14 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Settings2 } from "lucide-react";
 import {
   Table,
   TableBody,
@@ -71,6 +74,46 @@ export default function LeadsPage() {
   const [teamMembers, setTeamMembers] = useState<User[]>([]);
   const [bulkAssignUserId, setBulkAssignUserId] = useState<string>("");
   const [bulkAssigning, setBulkAssigning] = useState(false);
+
+  // Column visibility state
+  const [visibleColumns, setVisibleColumns] = useState<Set<string>>(new Set([
+    "name", "type", "contact", "campaign", "stage", "budget", "priority", "assignedTo", "created"
+  ]));
+  const [visibleCustomFields, setVisibleCustomFields] = useState<Set<string>>(new Set());
+
+  const allCustomFields = useMemo(() => {
+    const fields = new Set<string>();
+    leadsList.forEach(lead => {
+      if (lead.customFields) {
+        Object.keys(lead.customFields).forEach(key => fields.add(key));
+      }
+    });
+    return Array.from(fields).sort();
+  }, [leadsList]);
+
+  const toggleColumn = (column: string) => {
+    setVisibleColumns(prev => {
+      const next = new Set(prev);
+      if (next.has(column)) {
+        next.delete(column);
+      } else {
+        next.add(column);
+      }
+      return next;
+    });
+  };
+
+  const toggleCustomField = (field: string) => {
+    setVisibleCustomFields(prev => {
+      const next = new Set(prev);
+      if (next.has(field)) {
+        next.delete(field);
+      } else {
+        next.add(field);
+      }
+      return next;
+    });
+  };
 
   const fetchLeads = useCallback(async () => {
     try {
@@ -452,10 +495,62 @@ export default function LeadsPage() {
       ) : (
         /* Table View */
         <Card>
-          <CardHeader>
+          <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle className="text-lg font-medium">
               All Leads ({filteredLeads.length})
             </CardTitle>
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button variant="outline" size="sm">
+                  <Settings2 className="w-4 h-4 mr-2" />
+                  Columns
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-72">
+                <div className="space-y-4">
+                  <div>
+                    <h4 className="text-sm font-medium mb-2">Standard Columns</h4>
+                    <div className="space-y-2">
+                      {[
+                        { key: "name", label: "Name" },
+                        { key: "type", label: "Type" },
+                        { key: "contact", label: "Contact" },
+                        { key: "campaign", label: "Campaign" },
+                        { key: "stage", label: "Stage" },
+                        { key: "budget", label: "Budget" },
+                        { key: "priority", label: "Priority" },
+                        { key: "assignedTo", label: "Assigned To" },
+                        { key: "created", label: "Created" },
+                      ].map(col => (
+                        <label key={col.key} className="flex items-center gap-2 cursor-pointer">
+                          <Checkbox
+                            checked={visibleColumns.has(col.key)}
+                            onCheckedChange={() => toggleColumn(col.key)}
+                          />
+                          <span className="text-sm">{col.label}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                  {allCustomFields.length > 0 && (
+                    <div>
+                      <h4 className="text-sm font-medium mb-2">Custom Fields</h4>
+                      <div className="space-y-2 max-h-40 overflow-y-auto">
+                        {allCustomFields.map(field => (
+                          <label key={field} className="flex items-center gap-2 cursor-pointer">
+                            <Checkbox
+                              checked={visibleCustomFields.has(field)}
+                              onCheckedChange={() => toggleCustomField(field)}
+                            />
+                            <span className="text-sm">{field}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </PopoverContent>
+            </Popover>
           </CardHeader>
           <CardContent>
             <div className="overflow-x-auto">
@@ -475,15 +570,18 @@ export default function LeadsPage() {
                         />
                       </TableHead>
                     )}
-                    <TableHead>Name</TableHead>
-                    <TableHead>Type</TableHead>
-                    <TableHead>Contact</TableHead>
-                    <TableHead>Campaign</TableHead>
-                    <TableHead>Stage</TableHead>
-                    <TableHead>Budget</TableHead>
-                    <TableHead>Priority</TableHead>
-                    <TableHead>Assigned To</TableHead>
-                    <TableHead>Created</TableHead>
+                    {visibleColumns.has("name") && <TableHead>Name</TableHead>}
+                    {visibleColumns.has("type") && <TableHead>Type</TableHead>}
+                    {visibleColumns.has("contact") && <TableHead>Contact</TableHead>}
+                    {visibleColumns.has("campaign") && <TableHead>Campaign</TableHead>}
+                    {visibleColumns.has("stage") && <TableHead>Stage</TableHead>}
+                    {visibleColumns.has("budget") && <TableHead>Budget</TableHead>}
+                    {visibleColumns.has("priority") && <TableHead>Priority</TableHead>}
+                    {visibleColumns.has("assignedTo") && <TableHead>Assigned To</TableHead>}
+                    {visibleColumns.has("created") && <TableHead>Created</TableHead>}
+                    {visibleCustomFields.size > 0 && allCustomFields.filter(f => visibleCustomFields.has(f)).map(field => (
+                      <TableHead key={field}>{field}</TableHead>
+                    ))}
                     <TableHead className="w-16">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -503,70 +601,93 @@ export default function LeadsPage() {
                           />
                         </TableCell>
                       )}
-                      <TableCell className="font-medium">
-                        <div>
-                          <div>{lead.firstName} {lead.lastName}</div>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <Badge className={`${LEAD_TYPE_STYLES[lead.leadType]} border`}>
-                          {lead.leadType}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-neutral-600">
-                        <div className="text-sm">
-                          {lead.email && <div>{lead.email}</div>}
-                          {lead.mobile && <div className="text-neutral-500">{lead.mobile}</div>}
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-neutral-600">
-                        {lead.campaign?.name || "—"}
-                      </TableCell>
-                      <TableCell>
-                        <Badge
-                          className="border"
-                          style={{
-                            backgroundColor: lead.currentStage?.color ? `${lead.currentStage.color}20` : undefined,
-                            color: lead.currentStage?.color || undefined,
-                            borderColor: lead.currentStage?.color ? `${lead.currentStage.color}40` : undefined,
-                          }}
-                        >
-                          {lead.currentStage?.name || "—"}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-neutral-600">
-                        {lead.budgetMin || lead.budgetMax ? (
-                          <div className="text-sm">
-                            {lead.budgetMin && lead.budgetMax
-                              ? `${formatCurrency(lead.budgetMin)} - ${formatCurrency(lead.budgetMax)}`
-                              : lead.budgetMin
-                              ? `${formatCurrency(lead.budgetMin)}+`
-                              : `Up to ${formatCurrency(lead.budgetMax)}`}
+                      {visibleColumns.has("name") && (
+                        <TableCell className="font-medium">
+                          <div>
+                            <div>{lead.firstName} {lead.lastName}</div>
                           </div>
-                        ) : (
-                          "—"
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        <Badge className={`${PRIORITY_STYLES[lead.priority]} border-0`}>
-                          {lead.priority}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-neutral-600">
-                        {lead.assignedTo ? (
-                          <Badge
-                            variant="outline"
-                            className="text-xs"
-                          >
-                            {lead.assignedTo.fullName}
+                        </TableCell>
+                      )}
+                      {visibleColumns.has("type") && (
+                        <TableCell>
+                          <Badge className={`${LEAD_TYPE_STYLES[lead.leadType]} border`}>
+                            {lead.leadType}
                           </Badge>
-                        ) : (
-                          "—"
-                        )}
-                      </TableCell>
-                      <TableCell className="text-neutral-500 text-sm">
-                        {formatDate(lead.createdAt)}
-                      </TableCell>
+                        </TableCell>
+                      )}
+                      {visibleColumns.has("contact") && (
+                        <TableCell className="text-neutral-600">
+                          <div className="text-sm">
+                            {lead.email && <div>{lead.email}</div>}
+                            {lead.mobile && <div className="text-neutral-500">{lead.mobile}</div>}
+                          </div>
+                        </TableCell>
+                      )}
+                      {visibleColumns.has("campaign") && (
+                        <TableCell className="text-neutral-600">
+                          {lead.campaign?.name || "—"}
+                        </TableCell>
+                      )}
+                      {visibleColumns.has("stage") && (
+                        <TableCell>
+                          <Badge
+                            className="border"
+                            style={{
+                              backgroundColor: lead.currentStage?.color ? `${lead.currentStage.color}20` : undefined,
+                              color: lead.currentStage?.color || undefined,
+                              borderColor: lead.currentStage?.color ? `${lead.currentStage.color}40` : undefined,
+                            }}
+                          >
+                            {lead.currentStage?.name || "—"}
+                          </Badge>
+                        </TableCell>
+                      )}
+                      {visibleColumns.has("budget") && (
+                        <TableCell className="text-neutral-600">
+                          {lead.budgetMin || lead.budgetMax ? (
+                            <div className="text-sm">
+                              {lead.budgetMin && lead.budgetMax
+                                ? `${formatCurrency(lead.budgetMin)} - ${formatCurrency(lead.budgetMax)}`
+                                : lead.budgetMin
+                                ? `${formatCurrency(lead.budgetMin)}+`
+                                : `Up to ${formatCurrency(lead.budgetMax)}`}
+                            </div>
+                          ) : (
+                            "—"
+                          )}
+                        </TableCell>
+                      )}
+                      {visibleColumns.has("priority") && (
+                        <TableCell>
+                          <Badge className={`${PRIORITY_STYLES[lead.priority]} border-0`}>
+                            {lead.priority}
+                          </Badge>
+                        </TableCell>
+                      )}
+                      {visibleColumns.has("assignedTo") && (
+                        <TableCell className="text-neutral-600">
+                          {lead.assignedTo ? (
+                            <Badge
+                              variant="outline"
+                              className="text-xs"
+                            >
+                              {lead.assignedTo.fullName}
+                            </Badge>
+                          ) : (
+                            "—"
+                          )}
+                        </TableCell>
+                      )}
+                      {visibleColumns.has("created") && (
+                        <TableCell className="text-neutral-500 text-sm">
+                          {formatDate(lead.createdAt)}
+                        </TableCell>
+                      )}
+                      {visibleCustomFields.size > 0 && allCustomFields.filter(f => visibleCustomFields.has(f)).map(field => (
+                        <TableCell key={field} className="text-sm text-neutral-600">
+                          {lead.customFields?.[field] ? String(lead.customFields[field]).substring(0, 30) : "—"}
+                        </TableCell>
+                      ))}
                       <TableCell>
                         <EditLeadDialog leadId={lead.id} onLeadUpdated={fetchLeads}>
                           <Button variant="ghost" size="sm">

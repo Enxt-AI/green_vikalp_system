@@ -117,13 +117,30 @@ router.post("/google-sheets/sync", authenticate, async (req: Request, res: Respo
           assignedToId: userId,
         };
 
+        const customFieldsData: Record<string, any> = {};
+        const standardFields = [
+          "firstName", "lastName", "email", "mobile", "alternatePhone", "leadType",
+          "propertyTypePreference", "budgetMin", "budgetMax", "locationPreference",
+          "bedroomsMin", "bathroomsMin", "squareFeetMin", "moveInTimeline",
+          "currentHousingStatus", "preApprovalStatus", "preApprovalAmount",
+          "priority", "tags", "initialNotes", "nextFollowUpAt"
+        ];
+
         // Map columns to lead fields
         Object.entries(mapping).forEach(([field, colIdxStr]) => {
           const colIdx = parseInt(colIdxStr);
           if (!isNaN(colIdx) && row[colIdx]) {
-            leadData[field] = row[colIdx];
+            if (standardFields.includes(field)) {
+              leadData[field] = row[colIdx];
+            } else {
+              customFieldsData[field] = row[colIdx];
+            }
           }
         });
+
+        if (Object.keys(customFieldsData).length > 0) {
+          leadData.customFields = customFieldsData;
+        }
 
         // Basic validation for required fields
         if (!leadData.firstName) {
@@ -299,14 +316,31 @@ router.post("/google-forms/sync", authenticate, async (req: Request, res: Respon
         };
 
         const answers = response.answers || {};
+        const customFieldsData: Record<string, any> = {};
+        const standardFields = [
+          "firstName", "lastName", "email", "mobile", "alternatePhone", "leadType",
+          "propertyTypePreference", "budgetMin", "budgetMax", "locationPreference",
+          "bedroomsMin", "bathroomsMin", "squareFeetMin", "moveInTimeline",
+          "currentHousingStatus", "preApprovalStatus", "preApprovalAmount",
+          "priority", "tags", "initialNotes", "nextFollowUpAt"
+        ];
 
         // Map question IDs to lead fields
         Object.entries(mapping).forEach(([field, questionId]) => {
           const answerObj = answers[questionId];
           if (answerObj && answerObj.textAnswers && answerObj.textAnswers.answers && answerObj.textAnswers.answers.length > 0) {
-            leadData[field] = answerObj.textAnswers.answers[0].value;
+            const value = answerObj.textAnswers.answers[0].value;
+            if (standardFields.includes(field)) {
+              leadData[field] = value;
+            } else {
+              customFieldsData[field] = value;
+            }
           }
         });
+
+        if (Object.keys(customFieldsData).length > 0) {
+          leadData.customFields = customFieldsData;
+        }
 
         // Basic validation
         if (!leadData.firstName) {
@@ -548,6 +582,17 @@ router.post("/google-drive/import", authenticate, async (req: Request, res: Resp
 
         const assignedUserId = autoAssignments[i] || campaign.createdById;
 
+        const standardFieldKeys = [
+          "First Name", "firstName", "first_name",
+          "Last Name", "lastName", "last_name",
+          "Email", "email",
+          "Mobile", "mobile", "Phone", "phone",
+          "Alternate Phone", "alternatePhone",
+          "Lead Type", "leadType",
+          "Budget Min", "budgetMin",
+          "Budget Max", "budgetMax"
+        ];
+
         const leadData: any = {
           campaignId,
           currentStageId: stageId,
@@ -561,6 +606,17 @@ router.post("/google-drive/import", authenticate, async (req: Request, res: Resp
           budgetMin: row["Budget Min"] ? parseFloat(row["Budget Min"]) : null,
           budgetMax: row["Budget Max"] ? parseFloat(row["Budget Max"]) : null,
         };
+
+        // Collect custom fields from unmapped columns
+        const customFieldsData: Record<string, any> = {};
+        Object.entries(row).forEach(([key, value]) => {
+          if (!standardFieldKeys.includes(key) && value !== null && value !== undefined && String(value).trim() !== "") {
+            customFieldsData[key] = value;
+          }
+        });
+        if (Object.keys(customFieldsData).length > 0) {
+          leadData.customFields = customFieldsData;
+        }
 
         const identifier = leadData.email || leadData.mobile;
         let lead;
@@ -630,6 +686,11 @@ router.post("/webhooks/pabbly/:source/:campaignId/:stageId", async (req: Request
     const assignmentOrder = await getAutoAssignmentOrder(campaignId, campaign.createdById);
     const assignedUserId = assignmentOrder[0] || campaign.createdById;
 
+    const standardFields = [
+      "firstName", "lastName", "email", "mobile", "alternatePhone", "leadType",
+      "budgetMin", "budgetMax", "tags"
+    ];
+
     const leadData: any = {
       campaignId,
       currentStageId: stageId,
@@ -644,6 +705,17 @@ router.post("/webhooks/pabbly/:source/:campaignId/:stageId", async (req: Request
       budgetMax: data.budgetMax ? parseFloat(data.budgetMax) : null,
       tags: [source],
     };
+
+    // Collect custom fields from webhook payload
+    const customFieldsData: Record<string, any> = {};
+    Object.entries(data).forEach(([key, value]) => {
+      if (!standardFields.includes(key) && value !== null && value !== undefined) {
+        customFieldsData[key] = value;
+      }
+    });
+    if (Object.keys(customFieldsData).length > 0) {
+      leadData.customFields = customFieldsData;
+    }
 
     const identifier = leadData.email || leadData.mobile;
     let lead;
@@ -750,6 +822,18 @@ router.post("/upload-excel", authenticate, upload.single("file"), async (req: Re
 
         const assignedUserId = autoAssignments[i] || campaign.createdById;
 
+        const standardFieldKeys = [
+          "First Name", "firstName", "first_name",
+          "Last Name", "lastName", "last_name",
+          "Email", "email",
+          "Mobile", "mobile", "Phone", "phone",
+          "Alternate Phone", "alternatePhone",
+          "Lead Type", "leadType",
+          "Budget Min", "budgetMin",
+          "Budget Max", "budgetMax",
+          "tags"
+        ];
+
         const leadData: any = {
           campaignId,
           currentStageId: stageId,
@@ -764,6 +848,17 @@ router.post("/upload-excel", authenticate, upload.single("file"), async (req: Re
           budgetMax: row["Budget Max"] ? parseFloat(row["Budget Max"]) : null,
           tags: ["excel-upload"],
         };
+
+        // Collect custom fields from unmapped columns
+        const customFieldsData: Record<string, any> = {};
+        Object.entries(row).forEach(([key, value]) => {
+          if (!standardFieldKeys.includes(key) && value !== null && value !== undefined && String(value).trim() !== "") {
+            customFieldsData[key] = value;
+          }
+        });
+        if (Object.keys(customFieldsData).length > 0) {
+          leadData.customFields = customFieldsData;
+        }
 
         const identifier = leadData.email || leadData.mobile;
         let lead;

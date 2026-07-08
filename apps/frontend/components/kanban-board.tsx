@@ -155,6 +155,21 @@ function LeadCard({
             </div>
           )}
 
+          {lead.customFields && Object.keys(lead.customFields).length > 0 && (
+            <div className="flex flex-wrap gap-1 mt-1">
+              {Object.entries(lead.customFields).slice(0, 2).map(([key, value]) => (
+                <Badge key={key} variant="outline" className="text-xs bg-purple-50 text-purple-700 border-purple-200">
+                  {key}: {String(value).substring(0, 20)}
+                </Badge>
+              ))}
+              {Object.keys(lead.customFields).length > 2 && (
+                <Badge variant="outline" className="text-xs bg-purple-50 text-purple-700 border-purple-200">
+                  +{Object.keys(lead.customFields).length - 2} more
+                </Badge>
+              )}
+            </div>
+          )}
+
           {showActions && (
             <div className="pt-2 border-t space-y-1" onClick={(e) => e.stopPropagation()}>
               <div className="flex flex-wrap gap-1">
