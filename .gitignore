@@ -44,3 +44,4 @@ Mobile apps Screenshots/*
 *.csv
 # Added by code-review-graph
 .code-review-graph/
+deployment.md
