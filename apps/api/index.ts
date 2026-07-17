@@ -19,6 +19,7 @@ import workflowsRouter from "./routes/workflows";
 import { startNotifierCron } from "./cron/notifier";
 
 const app = express();
+app.set("trust proxy", 1); // Trust first proxy (Render load balancer)
 
 // Middleware
 app.use(cors({
