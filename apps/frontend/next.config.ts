@@ -1,7 +1,7 @@
 import { resolve } from "path";
 import type { NextConfig } from "next";
 
-const apiProxy = process.env.API_PROXY_URL || "http://localhost:3001";
+const apiProxy = process.env.NEXT_PUBLIC_API_URL || process.env.API_PROXY_URL || "http://localhost:3001";
 
 const nextConfig: NextConfig = {
     output: "standalone",
@@ -56,6 +56,18 @@ const nextConfig: NextConfig = {
             {
                 source: "/meetings/:path*",
                 destination: `${apiProxy}/meetings/:path*`,
+            },
+            {
+                source: "/integrations/:path*",
+                destination: `${apiProxy}/integrations/:path*`,
+            },
+            {
+                source: "/notifications/:path*",
+                destination: `${apiProxy}/notifications/:path*`,
+            },
+            {
+                source: "/workflows/:path*",
+                destination: `${apiProxy}/workflows/:path*`,
             },
             {
                 source: "/health",
