@@ -1,13 +1,19 @@
 {
-  "name": "CRM Mobile",
-  "short_name": "CRM",
-  "description": "Mobile CRM Application",
+  "name": "Green Vikalp CRM",
+  "short_name": "Green Vikalp",
+  "description": "Mobile CRM Application by Green Vikalp Systems",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#fafafa",
-  "theme_color": "#171717",
+  "background_color": "#ffffff",
+  "theme_color": "#1f7a3a",
   "orientation": "portrait",
   "icons": [
+    {
+      "src": "/apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png",
+      "purpose": "any"
+    },
     {
       "src": "/icon-192x192.png",
       "sizes": "192x192",
@@ -22,3 +28,4 @@
     }
   ]
 }
+

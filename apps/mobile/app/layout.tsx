@@ -10,7 +10,12 @@ export const metadata: Metadata = {
   title: "Green Vikalp Systems",
   description: "Mobile CRM application by Green Vikalp",
   icons: {
-    icon: "/logo.webp",
+    icon: [
+      { url: "/icon-192x192.png", sizes: "192x192", type: "image/png" },
+      { url: "/icon-512x512.png", sizes: "512x512", type: "image/png" },
+    ],
+    shortcut: "/icon-192x192.png",
+    apple: "/apple-touch-icon.png",
   },
   appleWebApp: {
     capable: true,
@@ -21,6 +26,7 @@ export const metadata: Metadata = {
     telephone: false,
   },
 };
+
 
 export const viewport: Viewport = {
   themeColor: "#1f7a3a",
