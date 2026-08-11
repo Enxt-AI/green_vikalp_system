@@ -467,7 +467,12 @@ export default function LeadDetailsPage() {
               {infoTab === "ABOUT" && (
                 <div>
                   {/* Horizontal scrollable table — swipe left/right to see all fields */}
-                  <div className="overflow-x-auto border-b border-brand-100">
+                  <div
+                    className="overflow-x-auto border-b border-brand-100"
+                    onTouchStart={(e) => e.stopPropagation()}
+                    onTouchMove={(e) => e.stopPropagation()}
+                    onTouchEnd={(e) => e.stopPropagation()}
+                  >
                     <table className="w-max min-w-full border-collapse">
                       <thead>
                         <tr className="bg-brand-50">
