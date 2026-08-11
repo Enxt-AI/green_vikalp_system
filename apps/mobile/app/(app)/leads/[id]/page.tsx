@@ -465,70 +465,116 @@ export default function LeadDetailsPage() {
               </div>
               
               {infoTab === "ABOUT" && (
-                <div className="p-4 space-y-3">
-                  <div className="flex flex-col border-b border-brand-50 pb-3">
-                    <span className="text-xs text-brand-500 font-semibold uppercase mb-0.5">Contact Name</span>
-                    <span className="text-sm font-bold text-brand-900 break-words">{lead.firstName} {lead.lastName}</span>
+                <div>
+                  {/* Horizontal scrollable table — swipe left/right to see all fields */}
+                  <div className="overflow-x-auto border-b border-brand-100">
+                    <table className="w-max min-w-full border-collapse">
+                      <thead>
+                        <tr className="bg-brand-50">
+                          <th className="px-4 py-2 text-left text-[10px] font-bold text-brand-500 uppercase tracking-wide whitespace-nowrap border-r border-brand-100">Contact Name</th>
+                          <th className="px-4 py-2 text-left text-[10px] font-bold text-brand-500 uppercase tracking-wide whitespace-nowrap border-r border-brand-100">Mobile Number</th>
+                          <th className="px-4 py-2 text-left text-[10px] font-bold text-brand-500 uppercase tracking-wide whitespace-nowrap border-r border-brand-100">Email</th>
+                          <th className="px-4 py-2 text-left text-[10px] font-bold text-brand-500 uppercase tracking-wide whitespace-nowrap border-r border-brand-100">Campaign</th>
+                          <th className="px-4 py-2 text-left text-[10px] font-bold text-brand-500 uppercase tracking-wide whitespace-nowrap border-r border-brand-100">Created At</th>
+                          {lead.priority && <th className="px-4 py-2 text-left text-[10px] font-bold text-brand-500 uppercase tracking-wide whitespace-nowrap border-r border-brand-100">Priority</th>}
+                          {lead.moveInTimeline && <th className="px-4 py-2 text-left text-[10px] font-bold text-brand-500 uppercase tracking-wide whitespace-nowrap border-r border-brand-100">Move In Timeline</th>}
+                          {lead.locationPreference && lead.locationPreference.length > 0 && <th className="px-4 py-2 text-left text-[10px] font-bold text-brand-500 uppercase tracking-wide whitespace-nowrap border-r border-brand-100">Location</th>}
+                          {lead.initialNotes && <th className="px-4 py-2 text-left text-[10px] font-bold text-brand-500 uppercase tracking-wide whitespace-nowrap border-r border-brand-100">Notes</th>}
+                          {lead.customFields && Object.keys(lead.customFields).map(key => (
+                            <th key={key} className="px-4 py-2 text-left text-[10px] font-bold text-brand-500 uppercase tracking-wide whitespace-nowrap border-r border-brand-100">{key}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr className="bg-white">
+                          <td className="px-4 py-3 text-sm font-bold text-brand-900 whitespace-nowrap border-r border-brand-50">{lead.firstName} {lead.lastName}</td>
+                          <td className="px-4 py-3 text-sm font-bold text-brand-900 whitespace-nowrap border-r border-brand-50">{lead.mobile || "N/A"}</td>
+                          <td className="px-4 py-3 text-sm font-bold text-brand-900 whitespace-nowrap border-r border-brand-50">{lead.email || "N/A"}</td>
+                          <td className="px-4 py-3 text-sm font-bold text-brand-900 whitespace-nowrap border-r border-brand-50">{lead.campaign?.name || "N/A"}</td>
+                          <td className="px-4 py-3 text-sm font-bold text-brand-900 whitespace-nowrap border-r border-brand-50">{new Date(lead.createdAt).toLocaleDateString()}</td>
+                          {lead.priority && <td className="px-4 py-3 text-sm font-bold text-brand-900 whitespace-nowrap border-r border-brand-50">{lead.priority}</td>}
+                          {lead.moveInTimeline && <td className="px-4 py-3 text-sm font-bold text-brand-900 whitespace-nowrap border-r border-brand-50">{lead.moveInTimeline.replace(/_/g, ' ')}</td>}
+                          {lead.locationPreference && lead.locationPreference.length > 0 && <td className="px-4 py-3 text-sm font-bold text-brand-900 whitespace-nowrap border-r border-brand-50">{lead.locationPreference.join(', ')}</td>}
+                          {lead.initialNotes && <td className="px-4 py-3 text-sm font-bold text-brand-900 whitespace-nowrap border-r border-brand-50">{lead.initialNotes}</td>}
+                          {lead.customFields && Object.entries(lead.customFields).map(([key, value]) => (
+                            <td key={key} className="px-4 py-3 text-sm font-bold text-brand-900 whitespace-nowrap border-r border-brand-50">{String(value)}</td>
+                          ))}
+                        </tr>
+                      </tbody>
+                    </table>
+                    {/* Scroll hint fade */}
+                    <div className="sticky right-0 top-0 bottom-0 w-6 bg-gradient-to-l from-white to-transparent pointer-events-none absolute" style={{right:0, top:0, bottom:0}} />
                   </div>
-                  <div className="flex flex-col border-b border-brand-50 pb-3">
-                    <span className="text-xs text-brand-500 font-semibold uppercase mb-0.5">Mobile Number</span>
-                    <span className="text-sm font-bold text-brand-900 break-all">{lead.mobile || "N/A"}</span>
-                  </div>
-                  <div className="flex flex-col border-b border-brand-50 pb-3">
-                    <span className="text-xs text-brand-500 font-semibold uppercase mb-0.5">Email</span>
-                    <span className="text-sm font-bold text-brand-900 break-all">{lead.email || "N/A"}</span>
-                  </div>
-                  <div className="flex flex-col border-b border-brand-50 pb-3">
-                    <span className="text-xs text-brand-500 font-semibold uppercase mb-0.5">Campaign</span>
-                    <span className="text-sm font-bold text-brand-900 break-words">{lead.campaign?.name || "N/A"}</span>
-                  </div>
-                  <div className="flex flex-col border-b border-brand-50 pb-3">
-                    <span className="text-xs text-brand-500 font-semibold uppercase mb-0.5">Created At</span>
-                    <span className="text-sm font-bold text-brand-900">{new Date(lead.createdAt).toLocaleDateString()}</span>
-                  </div>
+                  <p className="text-[10px] text-brand-400 text-center py-1.5 flex items-center justify-center gap-1">
+                    <span>←</span> Swipe to see all fields <span>→</span>
+                  </p>
 
-                  {lead.priority && (
+                  {/* Vertical detail list */}
+                  <div className="p-4 space-y-3">
                     <div className="flex flex-col border-b border-brand-50 pb-3">
-                      <span className="text-xs text-brand-500 font-semibold uppercase mb-0.5">Priority</span>
-                      <span className="text-sm font-bold text-brand-900 break-words">{lead.priority}</span>
+                      <span className="text-xs text-brand-500 font-semibold uppercase mb-0.5">Contact Name</span>
+                      <span className="text-sm font-bold text-brand-900 break-words">{lead.firstName} {lead.lastName}</span>
                     </div>
-                  )}
-
-                  {lead.moveInTimeline && (
                     <div className="flex flex-col border-b border-brand-50 pb-3">
-                      <span className="text-xs text-brand-500 font-semibold uppercase mb-0.5">Move In Timeline</span>
-                      <span className="text-sm font-bold text-brand-900 break-words">{lead.moveInTimeline.replace(/_/g, ' ')}</span>
+                      <span className="text-xs text-brand-500 font-semibold uppercase mb-0.5">Mobile Number</span>
+                      <span className="text-sm font-bold text-brand-900 break-all">{lead.mobile || "N/A"}</span>
                     </div>
-                  )}
-
-                  {lead.locationPreference && lead.locationPreference.length > 0 && (
                     <div className="flex flex-col border-b border-brand-50 pb-3">
-                      <span className="text-xs text-brand-500 font-semibold uppercase mb-0.5">Location</span>
-                      <span className="text-sm font-bold text-brand-900 break-words">{lead.locationPreference.join(', ')}</span>
+                      <span className="text-xs text-brand-500 font-semibold uppercase mb-0.5">Email</span>
+                      <span className="text-sm font-bold text-brand-900 break-all">{lead.email || "N/A"}</span>
                     </div>
-                  )}
-
-                  {lead.initialNotes && (
                     <div className="flex flex-col border-b border-brand-50 pb-3">
-                      <span className="text-xs text-brand-500 font-semibold uppercase mb-1">Notes</span>
-                      <span className="text-sm font-medium text-brand-900 break-words">{lead.initialNotes}</span>
+                      <span className="text-xs text-brand-500 font-semibold uppercase mb-0.5">Campaign</span>
+                      <span className="text-sm font-bold text-brand-900 break-words">{lead.campaign?.name || "N/A"}</span>
                     </div>
-                  )}
+                    <div className="flex flex-col border-b border-brand-50 pb-3">
+                      <span className="text-xs text-brand-500 font-semibold uppercase mb-0.5">Created At</span>
+                      <span className="text-sm font-bold text-brand-900">{new Date(lead.createdAt).toLocaleDateString()}</span>
+                    </div>
 
-                  {/* Render Custom Fields dynamically */}
-                  {lead.customFields && Object.keys(lead.customFields).length > 0 && (
-                    <>
-                      <div className="pt-2 pb-1">
-                        <h4 className="text-xs font-bold text-brand-800 uppercase tracking-wider">Custom Fields</h4>
+                    {lead.priority && (
+                      <div className="flex flex-col border-b border-brand-50 pb-3">
+                        <span className="text-xs text-brand-500 font-semibold uppercase mb-0.5">Priority</span>
+                        <span className="text-sm font-bold text-brand-900 break-words">{lead.priority}</span>
                       </div>
-                      {Object.entries(lead.customFields).map(([key, value], idx) => (
-                        <div key={key} className={`flex flex-col ${idx !== Object.keys(lead.customFields!).length - 1 ? "border-b border-brand-50 pb-3" : "pb-2"}`}>
-                          <span className="text-xs text-brand-500 font-semibold uppercase mb-0.5">{key}</span>
-                          <span className="text-sm font-bold text-brand-900 break-words">{String(value)}</span>
+                    )}
+
+                    {lead.moveInTimeline && (
+                      <div className="flex flex-col border-b border-brand-50 pb-3">
+                        <span className="text-xs text-brand-500 font-semibold uppercase mb-0.5">Move In Timeline</span>
+                        <span className="text-sm font-bold text-brand-900 break-words">{lead.moveInTimeline.replace(/_/g, ' ')}</span>
+                      </div>
+                    )}
+
+                    {lead.locationPreference && lead.locationPreference.length > 0 && (
+                      <div className="flex flex-col border-b border-brand-50 pb-3">
+                        <span className="text-xs text-brand-500 font-semibold uppercase mb-0.5">Location</span>
+                        <span className="text-sm font-bold text-brand-900 break-words">{lead.locationPreference.join(', ')}</span>
+                      </div>
+                    )}
+
+                    {lead.initialNotes && (
+                      <div className="flex flex-col border-b border-brand-50 pb-3">
+                        <span className="text-xs text-brand-500 font-semibold uppercase mb-1">Notes</span>
+                        <span className="text-sm font-medium text-brand-900 break-words">{lead.initialNotes}</span>
+                      </div>
+                    )}
+
+                    {/* Render Custom Fields dynamically */}
+                    {lead.customFields && Object.keys(lead.customFields).length > 0 && (
+                      <>
+                        <div className="pt-2 pb-1">
+                          <h4 className="text-xs font-bold text-brand-800 uppercase tracking-wider">Custom Fields</h4>
                         </div>
-                      ))}
-                    </>
-                  )}
+                        {Object.entries(lead.customFields).map(([key, value], idx) => (
+                          <div key={key} className={`flex flex-col ${idx !== Object.keys(lead.customFields!).length - 1 ? "border-b border-brand-50 pb-3" : "pb-2"}`}>
+                            <span className="text-xs text-brand-500 font-semibold uppercase mb-0.5">{key}</span>
+                            <span className="text-sm font-bold text-brand-900 break-words">{String(value)}</span>
+                          </div>
+                        ))}
+                      </>
+                    )}
+                  </div>
                 </div>
               )}
 
