@@ -915,7 +915,25 @@ export const leads = {
       body: formData,
     });
 
-    const result = await response.json();
+    // Safely parse response — handle non-JSON error pages from proxy/multer
+    const contentType = response.headers.get("content-type");
+    const isJson = contentType && contentType.includes("application/json");
+
+    let result: any;
+    if (isJson) {
+      result = await response.json();
+    } else {
+      const text = await response.text();
+      if (!response.ok) {
+        throw new ApiError(response.status, text || "Failed to parse spreadsheet");
+      }
+      // Try parsing as JSON in case content-type header is missing/wrong
+      try {
+        result = JSON.parse(text);
+      } catch {
+        throw new ApiError(response.status, text || "Server returned an unexpected response");
+      }
+    }
 
     if (!response.ok) {
       throw new ApiError(response.status, result.error || "Failed to parse spreadsheet", result.details);
@@ -956,7 +974,25 @@ export const leads = {
       body: formData,
     });
 
-    const result = await response.json();
+    // Safely parse response — handle non-JSON error pages from proxy/multer
+    const contentType = response.headers.get("content-type");
+    const isJson = contentType && contentType.includes("application/json");
+
+    let result: any;
+    if (isJson) {
+      result = await response.json();
+    } else {
+      const text = await response.text();
+      if (!response.ok) {
+        throw new ApiError(response.status, text || "Failed to import leads");
+      }
+      // Try parsing as JSON in case content-type header is missing/wrong
+      try {
+        result = JSON.parse(text);
+      } catch {
+        throw new ApiError(response.status, text || "Server returned an unexpected response");
+      }
+    }
 
     if (!response.ok) {
       throw new ApiError(response.status, result.error || "Failed to import leads", result.details);

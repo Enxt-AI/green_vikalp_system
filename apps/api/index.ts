@@ -53,6 +53,25 @@ app.get("/health", (_req, res) => {
   res.json({ status: "ok", awsRegion: process.env.AWS_REGION, s3Bucket: process.env.S3_BUCKET_NAME });
 });
 
+// Global error handler — ensures all errors (including Multer) are returned as JSON
+app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  console.error("[Global Error Handler]", err);
+
+  // Multer errors (file size, invalid type, etc.)
+  if (err.name === "MulterError") {
+    return res.status(400).json({
+      error: `File upload error: ${err.message}`,
+      code: err.code,
+    });
+  }
+
+  // Other known errors with messages
+  const statusCode = err.status || err.statusCode || 500;
+  res.status(statusCode).json({
+    error: err.message || "An unexpected server error occurred",
+  });
+});
+
 const PORT = parseInt(process.env.PORT || "3001", 10);
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`API server running on port ${PORT}`);
