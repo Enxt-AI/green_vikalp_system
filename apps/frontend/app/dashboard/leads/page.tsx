@@ -194,16 +194,37 @@ export default function LeadsPage() {
   }, {} as Record<LeadType, number>);
 
   // Bulk selection helpers
-  const toggleLeadSelection = (leadId: string) => {
+  const [lastSelectedIndex, setLastSelectedIndex] = useState<number | null>(null);
+
+  const toggleLeadSelection = (leadId: string, index: number, isShiftPressed: boolean) => {
     setSelectedLeadIds((prev) => {
       const next = new Set(prev);
-      if (next.has(leadId)) {
-        next.delete(leadId);
+      
+      if (isShiftPressed && lastSelectedIndex !== null) {
+        const start = Math.min(lastSelectedIndex, index);
+        const end = Math.max(lastSelectedIndex, index);
+        
+        // Determine if we are selecting or deselecting based on the target lead's current state
+        const isSelecting = !next.has(leadId);
+        
+        for (let i = start; i <= end; i++) {
+          const id = filteredLeads[i].id;
+          if (isSelecting) {
+            next.add(id);
+          } else {
+            next.delete(id);
+          }
+        }
       } else {
-        next.add(leadId);
+        if (next.has(leadId)) {
+          next.delete(leadId);
+        } else {
+          next.add(leadId);
+        }
       }
       return next;
     });
+    setLastSelectedIndex(index);
   };
 
   const toggleSelectAll = () => {
@@ -499,13 +520,57 @@ export default function LeadsPage() {
             <CardTitle className="text-lg font-medium">
               All Leads ({filteredLeads.length})
             </CardTitle>
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button variant="outline" size="sm">
-                  <Settings2 className="w-4 h-4 mr-2" />
-                  Columns
-                </Button>
-              </PopoverTrigger>
+            <div className="flex items-center gap-2">
+              {canBulkAssign && filteredLeads.length > 0 && (
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" size="sm">
+                      <svg className="w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M3 4.5h14.25M3 9h9.75M3 13.5h9.75m4.5-4.5v12m0 0l-3.75-3.75M17.25 21L21 17.25" />
+                      </svg>
+                      Quick Select
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-60" align="end">
+                    <div className="space-y-4">
+                      <h4 className="font-medium text-sm">Select top leads</h4>
+                      <div className="grid grid-cols-2 gap-2">
+                        {[10, 25, 50, 100].map(num => (
+                          <Button 
+                            key={num} 
+                            variant="outline" 
+                            size="sm"
+                            disabled={filteredLeads.length === 0}
+                            onClick={() => {
+                              setSelectedLeadIds(new Set(filteredLeads.slice(0, num).map(l => l.id)));
+                            }}
+                          >
+                            Top {num}
+                          </Button>
+                        ))}
+                      </div>
+                      <div className="pt-2 border-t">
+                        <Button 
+                           variant="outline" 
+                           size="sm" 
+                           className="w-full"
+                           disabled={filteredLeads.length === 0}
+                           onClick={() => setSelectedLeadIds(new Set(filteredLeads.map(l => l.id)))}
+                        >
+                           Select All ({filteredLeads.length})
+                        </Button>
+                      </div>
+                    </div>
+                  </PopoverContent>
+                </Popover>
+              )}
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" size="sm">
+                    <Settings2 className="w-4 h-4 mr-2" />
+                    Columns
+                  </Button>
+                </PopoverTrigger>
               <PopoverContent className="w-72">
                 <div className="space-y-4">
                   <div>
@@ -551,6 +616,7 @@ export default function LeadsPage() {
                 </div>
               </PopoverContent>
             </Popover>
+            </div>
           </CardHeader>
           <CardContent>
             <div className="overflow-x-auto">
@@ -586,7 +652,7 @@ export default function LeadsPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredLeads.map((lead) => (
+                  {filteredLeads.map((lead, index) => (
                     <TableRow
                       key={lead.id}
                       className={selectedLeadIds.has(lead.id) ? "bg-blue-50/50" : ""}
@@ -597,7 +663,8 @@ export default function LeadsPage() {
                             type="checkbox"
                             className="h-4 w-4 rounded border-neutral-300 text-blue-600 focus:ring-blue-500 cursor-pointer accent-blue-600"
                             checked={selectedLeadIds.has(lead.id)}
-                            onChange={() => toggleLeadSelection(lead.id)}
+                            onChange={() => {}}
+                            onClick={(e) => toggleLeadSelection(lead.id, index, e.shiftKey)}
                           />
                         </TableCell>
                       )}
