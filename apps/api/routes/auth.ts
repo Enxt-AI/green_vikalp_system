@@ -395,7 +395,33 @@ router.get("/users", authenticate, requireAdmin, async (_req: Request, res: Resp
       orderBy: { createdAt: "desc" },
     });
 
-    res.json({ users });
+    const usersWithStats = await Promise.all(
+      users.map(async (user) => {
+        const [totalCalls, connectedCalls] = await Promise.all([
+          prisma.interaction.count({
+            where: { createdById: user.id, type: "CALL" },
+          }),
+          prisma.interaction.count({
+            where: { 
+              createdById: user.id, 
+              type: "CALL", 
+              duration: { gt: 0 } 
+            },
+          }),
+        ]);
+
+        return {
+          ...user,
+          stats: {
+            totalCalls,
+            connectedCalls,
+            unconnectedCalls: totalCalls - connectedCalls,
+          },
+        };
+      })
+    );
+
+    res.json({ users: usersWithStats });
   } catch (error) {
     console.error("List users error:", error);
     res.status(500).json({ error: "Internal server error" });
