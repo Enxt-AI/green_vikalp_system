@@ -194,16 +194,33 @@ export default function LeadsPage() {
   }, {} as Record<LeadType, number>);
 
   // Bulk selection helpers
-  const toggleLeadSelection = (leadId: string) => {
-    setSelectedLeadIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(leadId)) {
-        next.delete(leadId);
-      } else {
-        next.add(leadId);
-      }
-      return next;
-    });
+  const [lastSelectedIndex, setLastSelectedIndex] = useState<number | null>(null);
+
+  const toggleLeadSelection = (leadId: string, index: number, isShift: boolean) => {
+    if (isShift && lastSelectedIndex !== null) {
+      setSelectedLeadIds((prev) => {
+        const next = new Set(prev);
+        const start = Math.min(lastSelectedIndex, index);
+        const end = Math.max(lastSelectedIndex, index);
+        
+        // Add all leads in this range
+        for (let i = start; i <= end; i++) {
+          next.add(filteredLeads[i].id);
+        }
+        return next;
+      });
+    } else {
+      setSelectedLeadIds((prev) => {
+        const next = new Set(prev);
+        if (next.has(leadId)) {
+          next.delete(leadId);
+        } else {
+          next.add(leadId);
+        }
+        return next;
+      });
+    }
+    setLastSelectedIndex(index);
   };
 
   const toggleSelectAll = () => {
@@ -212,6 +229,7 @@ export default function LeadsPage() {
     } else {
       setSelectedLeadIds(new Set(filteredLeads.map((l) => l.id)));
     }
+    setLastSelectedIndex(null);
   };
 
   const isAllSelected = filteredLeads.length > 0 && selectedLeadIds.size === filteredLeads.length;
@@ -591,7 +609,7 @@ export default function LeadsPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredLeads.map((lead) => (
+                  {filteredLeads.map((lead, index) => (
                     <TableRow
                       key={lead.id}
                       className={selectedLeadIds.has(lead.id) ? "bg-blue-50/50" : ""}
@@ -602,7 +620,7 @@ export default function LeadsPage() {
                             type="checkbox"
                             className="h-4 w-4 rounded border-neutral-300 text-blue-600 focus:ring-blue-500 cursor-pointer accent-blue-600"
                             checked={selectedLeadIds.has(lead.id)}
-                            onChange={() => toggleLeadSelection(lead.id)}
+                            onChange={(e) => toggleLeadSelection(lead.id, index, (e.nativeEvent as any).shiftKey)}
                           />
                         </TableCell>
                       )}
