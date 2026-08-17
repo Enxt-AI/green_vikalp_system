@@ -1146,7 +1146,8 @@ router.post("/import/bulk", authenticate, upload.single("file"), async (req, res
       });
 
     // 1. DUPLICATE CHECKING PHASE (Chunked)
-    const duplicateCheckChunks = chunkArray(preparedRows, 20); // Process 20 rows concurrently
+    // Using chunk size 5 to respect Render free tier DB connection and memory limits
+    const duplicateCheckChunks = chunkArray(preparedRows, 5); 
     
     for (const chunk of duplicateCheckChunks) {
       await Promise.all(chunk.map(async ({ row, rowNumber }) => {
@@ -1315,7 +1316,8 @@ router.post("/import/bulk", authenticate, upload.single("file"), async (req, res
     }
 
     // 2. CREATION PHASE (Chunked)
-    const creationChunks = chunkArray(rowsToCreate, 20); // Create 20 leads concurrently
+    // Using chunk size 5 to respect Render free tier DB connection and memory limits
+    const creationChunks = chunkArray(rowsToCreate, 5); 
     
     for (const chunk of creationChunks) {
       await Promise.all(chunk.map(async ({ leadData, rowNumber }) => {
