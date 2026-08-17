@@ -1128,204 +1128,185 @@ router.post("/import/bulk", authenticate, upload.single("file"), async (req, res
 
     const rowsToCreate: { leadData: any; rowNumber: number }[] = [];
 
-    for (let i = 0; i < rows.length; i++) {
-      const row = rows[i];
-      if (!row) continue;
+    // Helper to process arrays in chunks to prevent connection pool exhaustion while maximizing concurrency
+    const chunkArray = <T>(array: T[], size: number): T[][] => {
+      const chunked: T[][] = [];
+      for (let i = 0; i < array.length; i += size) {
+        chunked.push(array.slice(i, i + size));
+      }
+      return chunked;
+    };
 
-      // Check if the row is entirely empty (all cells are blank/whitespace)
-      const isRowEmpty = Object.values(row).every(v => !v || String(v).trim() === "");
-      if (isRowEmpty) continue;
+    // Filter and prepare all valid rows first
+    const preparedRows = rows.map((row, index) => ({ row, rowNumber: index + 1 }))
+      .filter(({ row }) => {
+        if (!row) return false;
+        // Check if the row is entirely empty
+        return !Object.values(row).every(v => !v || String(v).trim() === "");
+      });
 
-      const rowNumber = i + 1;
+    // 1. DUPLICATE CHECKING PHASE (Chunked)
+    const duplicateCheckChunks = chunkArray(preparedRows, 20); // Process 20 rows concurrently
+    
+    for (const chunk of duplicateCheckChunks) {
+      await Promise.all(chunk.map(async ({ row, rowNumber }) => {
+        try {
+          // Build lead data from mappings
+          const leadData: any = {
+            campaignId,
+            currentStageId: defaultStageId,
+            assignedToId: assignmentMode === "MANUAL" ? (defaultAssignedToId || userId) : undefined,
+            priority: defaultPriority,
+          };
 
-      try {
-        // Build lead data from mappings
-        const leadData: any = {
-          campaignId,
-          currentStageId: defaultStageId,
-          assignedToId: assignmentMode === "MANUAL" ? (defaultAssignedToId || userId) : undefined,
-          priority: defaultPriority,
-        };
+          const customFieldsData: Record<string, any> = {};
 
-        const customFieldsData: Record<string, any> = {};
+          // Standard fields in Lead model (not custom)
+          const standardFields = [
+            "firstName", "lastName", "email", "mobile", "alternatePhone", "leadType",
+            "propertyTypePreference", "budgetMin", "budgetMax", "locationPreference",
+            "bedroomsMin", "bathroomsMin", "squareFeetMin", "moveInTimeline",
+            "currentHousingStatus", "preApprovalStatus", "preApprovalAmount",
+            "priority", "tags", "initialNotes", "nextFollowUpAt"
+          ];
 
-        // Standard fields in Lead model (not custom)
-        const standardFields = [
-          "firstName", "lastName", "email", "mobile", "alternatePhone", "leadType",
-          "propertyTypePreference", "budgetMin", "budgetMax", "locationPreference",
-          "bedroomsMin", "bathroomsMin", "squareFeetMin", "moveInTimeline",
-          "currentHousingStatus", "preApprovalStatus", "preApprovalAmount",
-          "priority", "tags", "initialNotes", "nextFollowUpAt"
-        ];
+          // Apply column mappings
+          for (const [sourceCol, mapping] of mappingLookup.entries()) {
+            const rawValue = row[sourceCol];
+            const transformedValue = transformValue(rawValue, mapping.transform, mapping.targetField);
 
-        // Apply column mappings
-        for (const [sourceCol, mapping] of mappingLookup.entries()) {
-          const rawValue = row[sourceCol];
-          const transformedValue = transformValue(rawValue, mapping.transform, mapping.targetField);
+            if (transformedValue !== null && transformedValue !== undefined) {
+              // Check if this is a custom field
+              if (mapping.isCustomField || !standardFields.includes(mapping.targetField)) {
+                const fieldName = mapping.customFieldName || mapping.targetField;
+                customFieldsData[fieldName] = transformedValue;
+              } else {
+                leadData[mapping.targetField] = transformedValue;
 
-          if (transformedValue !== null && transformedValue !== undefined) {
-            // Check if this is a custom field
-            if (mapping.isCustomField || !standardFields.includes(mapping.targetField)) {
-              const fieldName = mapping.customFieldName || mapping.targetField;
-              customFieldsData[fieldName] = transformedValue;
-            } else {
-              leadData[mapping.targetField] = transformedValue;
+                // Protect Enum fields
+                const validEnums: Record<string, string[]> = {
+                  leadType: ["BUYER", "SELLER", "INVESTOR", "RENTER", "BUYER_SELLER"],
+                  priority: ["LOW", "MEDIUM", "HIGH", "URGENT"],
+                  moveInTimeline: ["ASAP", "ONE_TO_THREE_MONTHS", "THREE_TO_SIX_MONTHS", "SIX_TO_TWELVE_MONTHS", "OVER_A_YEAR", "JUST_BROWSING"],
+                  currentHousingStatus: ["RENTING", "OWNS_HOME", "LIVING_WITH_FAMILY", "OTHER"],
+                  preApprovalStatus: ["NOT_STARTED", "IN_PROGRESS", "PRE_QUALIFIED", "PRE_APPROVED", "NOT_NEEDED"],
+                };
 
-              // Protect Enum fields from crashing Prisma if user maps a random string/number
-              const validEnums: Record<string, string[]> = {
-                leadType: ["BUYER", "SELLER", "INVESTOR", "RENTER", "BUYER_SELLER"],
-                priority: ["LOW", "MEDIUM", "HIGH", "URGENT"],
-                moveInTimeline: ["ASAP", "ONE_TO_THREE_MONTHS", "THREE_TO_SIX_MONTHS", "SIX_TO_TWELVE_MONTHS", "OVER_A_YEAR", "JUST_BROWSING"],
-                currentHousingStatus: ["RENTING", "OWNS_HOME", "LIVING_WITH_FAMILY", "OTHER"],
-                preApprovalStatus: ["NOT_STARTED", "IN_PROGRESS", "PRE_QUALIFIED", "PRE_APPROVED", "NOT_NEEDED"],
-              };
-
-              if (validEnums[mapping.targetField] && !validEnums[mapping.targetField].includes(String(transformedValue))) {
-                delete leadData[mapping.targetField];
+                if (validEnums[mapping.targetField] && !validEnums[mapping.targetField].includes(String(transformedValue))) {
+                  delete leadData[mapping.targetField];
+                }
               }
             }
           }
-        }
 
-        // Attach custom fields if any
-        if (Object.keys(customFieldsData).length > 0) {
-          leadData.customFields = customFieldsData;
-        }
-
-        // Ensure required fields (First name, and either Email or Mobile)
-        if (!leadData.firstName) {
-          results.push({
-            row: rowNumber,
-            status: "error",
-            message: "Missing required field: First Name",
-          });
-          continue;
-        }
-
-        if (!leadData.email && !leadData.mobile) {
-          results.push({
-            row: rowNumber,
-            status: "error",
-            message: "Missing required field: Provide either an Email or a Mobile Number",
-          });
-          continue;
-        }
-
-        // Fill missing last name with empty string for Prisma
-        if (!leadData.lastName) leadData.lastName = "";
-
-        // Check for duplicates
-        if (duplicateHandling !== "CREATE_NEW" && (leadData.email || leadData.mobile)) {
-          const duplicateWhere: any = { campaignId, OR: [] };
-
-          if (duplicateCheckFields.includes("email") && leadData.email) {
-            duplicateWhere.OR.push({ email: leadData.email });
-          }
-          if (duplicateCheckFields.includes("mobile") && leadData.mobile) {
-            duplicateWhere.OR.push({ mobile: leadData.mobile });
-          }
-          if (duplicateCheckFields.includes("both") && leadData.email && leadData.mobile) {
-            duplicateWhere.OR.push({
-              AND: [{ email: leadData.email }, { mobile: leadData.mobile }],
-            });
+          // Attach custom fields if any
+          if (Object.keys(customFieldsData).length > 0) {
+            leadData.customFields = customFieldsData;
           }
 
-          if (duplicateWhere.OR.length > 0) {
-            const existingLead = await prisma.lead.findFirst({ where: duplicateWhere });
+          // Ensure required fields
+          if (!leadData.firstName) {
+            results.push({ row: rowNumber, status: "error", message: "Missing required field: First Name" });
+            return;
+          }
 
-            if (existingLead) {
-              if (duplicateHandling === "SKIP") {
-                results.push({
-                  row: rowNumber,
-                  status: "skipped",
-                  message: `Duplicate found (${existingLead.email || existingLead.mobile})`,
-                  leadId: existingLead.id,
-                });
-                continue;
-              } else if (duplicateHandling === "UPDATE") {
-                const assignedToIdForUpdate = assignmentMode === "AUTO"
-                  ? assignmentOrder[assignmentIndex % assignmentOrder.length]
-                  : (leadData.assignedToId || userId);
-                
-                if (assignmentMode === "AUTO") {
-                  assignmentIndex++;
-                }
+          if (!leadData.email && !leadData.mobile) {
+            results.push({ row: rowNumber, status: "error", message: "Missing required field: Provide either an Email or a Mobile Number" });
+            return;
+          }
 
-                const updated = await prisma.lead.update({
-                  where: { id: existingLead.id },
-                  data: { ...leadData, assignedToId: assignedToIdForUpdate },
-                });
+          // Fill missing last name with empty string for Prisma
+          if (!leadData.lastName) leadData.lastName = "";
 
-                if (leadData.nextFollowUpAt) {
-                  const nextFollowUpDate = new Date(leadData.nextFollowUpAt);
+          // Check for duplicates
+          if (duplicateHandling !== "CREATE_NEW" && (leadData.email || leadData.mobile)) {
+            const duplicateWhere: any = { campaignId, OR: [] };
 
-                  const existingTask = await prisma.task.findFirst({
-                    where: {
-                      leadId: existingLead.id,
-                      type: "FOLLOW_UP",
-                      isCompleted: false,
-                    },
-                    orderBy: {
-                      createdAt: 'desc',
-                    },
+            if (duplicateCheckFields.includes("email") && leadData.email) {
+              duplicateWhere.OR.push({ email: leadData.email });
+            }
+            if (duplicateCheckFields.includes("mobile") && leadData.mobile) {
+              duplicateWhere.OR.push({ mobile: leadData.mobile });
+            }
+            if (duplicateCheckFields.includes("both") && leadData.email && leadData.mobile) {
+              duplicateWhere.OR.push({ AND: [{ email: leadData.email }, { mobile: leadData.mobile }] });
+            }
+
+            if (duplicateWhere.OR.length > 0) {
+              const existingLead = await prisma.lead.findFirst({ where: duplicateWhere });
+
+              if (existingLead) {
+                if (duplicateHandling === "SKIP") {
+                  results.push({
+                    row: rowNumber,
+                    status: "skipped",
+                    message: `Duplicate found (${existingLead.email || existingLead.mobile})`,
+                    leadId: existingLead.id,
+                  });
+                  return;
+                } else if (duplicateHandling === "UPDATE") {
+                  let assignedToIdForUpdate = leadData.assignedToId || userId;
+                  
+                  if (assignmentMode === "AUTO" && assignmentOrder.length > 0) {
+                    // Safe atomic-like increment since we increment and grab a localized index
+                    const currentIndex = assignmentIndex++;
+                    assignedToIdForUpdate = assignmentOrder[currentIndex % assignmentOrder.length];
+                  }
+
+                  const updated = await prisma.lead.update({
+                    where: { id: existingLead.id },
+                    data: { ...leadData, assignedToId: assignedToIdForUpdate },
                   });
 
-                  if (existingTask) {
-                    await prisma.task.update({
-                      where: { id: existingTask.id },
-                      data: {
-                        dueDate: nextFollowUpDate,
-                        assignedToId: assignedToIdForUpdate,
-                      },
+                  if (leadData.nextFollowUpAt) {
+                    const nextFollowUpDate = new Date(leadData.nextFollowUpAt);
+                    const existingTask = await prisma.task.findFirst({
+                      where: { leadId: existingLead.id, type: "FOLLOW_UP", isCompleted: false },
+                      orderBy: { createdAt: 'desc' },
                     });
-                  } else {
-                    await prisma.task.create({
-                      data: {
-                        title: `Follow up with ${updated.firstName} ${updated.lastName}`,
-                        description: `Follow-up scheduled for lead ${updated.firstName} ${updated.lastName}${updated.email ? ` (${updated.email})` : ''}`,
-                        type: "FOLLOW_UP",
-                        priority: updated.priority || "MEDIUM",
-                        dueDate: nextFollowUpDate,
-                        assignedToId: assignedToIdForUpdate,
-                        leadId: existingLead.id,
-                      },
-                    });
-                  }
-                }
 
-                results.push({
-                  row: rowNumber,
-                  status: "success",
-                  message: "Updated existing lead",
-                  leadId: updated.id,
-                });
-                successfulLeads.push(updated.id);
-                continue;
+                    if (existingTask) {
+                      await prisma.task.update({
+                        where: { id: existingTask.id },
+                        data: { dueDate: nextFollowUpDate, assignedToId: assignedToIdForUpdate },
+                      });
+                    } else {
+                      await prisma.task.create({
+                        data: {
+                          title: `Follow up with ${updated.firstName} ${updated.lastName}`,
+                          description: `Follow-up scheduled for lead ${updated.firstName} ${updated.lastName}${updated.email ? ` (${updated.email})` : ''}`,
+                          type: "FOLLOW_UP",
+                          priority: updated.priority || "MEDIUM",
+                          dueDate: nextFollowUpDate,
+                          assignedToId: assignedToIdForUpdate,
+                          leadId: existingLead.id,
+                        },
+                      });
+                    }
+                  }
+
+                  results.push({ row: rowNumber, status: "success", message: "Updated existing lead", leadId: updated.id });
+                  successfulLeads.push(updated.id);
+                  return;
+                }
               }
             }
           }
+
+          rowsToCreate.push({ leadData, rowNumber });
+
+        } catch (error: any) {
+          console.error(`Error processing row ${rowNumber}:`, error);
+          let errorMessage = error.message || "Unknown error";
+          if (error.errors && Array.isArray(error.errors)) {
+            errorMessage = error.errors.map((e: any) => e.message).join(", ");
+          }
+          results.push({ row: rowNumber, status: "error", message: errorMessage });
         }
-
-        rowsToCreate.push({ leadData, rowNumber });
-
-      } catch (error: any) {
-        console.error(`Error processing row ${rowNumber}:`, error);
-
-        let errorMessage = "Unknown error";
-        if (error.errors && Array.isArray(error.errors)) {
-          errorMessage = error.errors.map((e: any) => e.message).join(", ");
-        } else if (error.message) {
-          errorMessage = error.message;
-        }
-
-        results.push({
-          row: rowNumber,
-          status: "error",
-          message: errorMessage,
-        });
-      }
+      }));
     }
 
+    // Assign leads strictly evenly for creations
     if (assignmentMode === "AUTO" && rowsToCreate.length > 0 && assignmentOrder.length > 1) {
       const autoAssignments = assignLeadsRoundRobin(rowsToCreate.length, assignmentOrder);
       rowsToCreate.forEach((item, idx) => {
@@ -1333,56 +1314,48 @@ router.post("/import/bulk", authenticate, upload.single("file"), async (req, res
       });
     }
 
-    for (const { leadData, rowNumber } of rowsToCreate) {
-      try {
-        if (!leadData.assignedToId) {
-          leadData.assignedToId = userId;
-        }
+    // 2. CREATION PHASE (Chunked)
+    const creationChunks = chunkArray(rowsToCreate, 20); // Create 20 leads concurrently
+    
+    for (const chunk of creationChunks) {
+      await Promise.all(chunk.map(async ({ leadData, rowNumber }) => {
+        try {
+          if (!leadData.assignedToId) {
+            leadData.assignedToId = userId;
+          }
 
-        const validatedLead = createLeadSchema.parse(leadData);
+          const validatedLead = createLeadSchema.parse(leadData);
 
-        const newLead = await prisma.lead.create({
-          data: validatedLead as any,
-        });
-
-        if (leadData.nextFollowUpAt) {
-          await prisma.task.create({
-            data: {
-              title: `Follow up with ${newLead.firstName} ${newLead.lastName}`,
-              description: `Follow-up scheduled for lead ${newLead.firstName} ${newLead.lastName}${newLead.email ? ` (${newLead.email})` : ''}`,
-              type: "FOLLOW_UP",
-              priority: newLead.priority || "MEDIUM",
-              dueDate: new Date(leadData.nextFollowUpAt),
-              assignedToId: newLead.assignedToId,
-              leadId: newLead.id,
-            },
+          const newLead = await prisma.lead.create({
+            data: validatedLead as any,
           });
+
+          if (leadData.nextFollowUpAt) {
+            await prisma.task.create({
+              data: {
+                title: `Follow up with ${newLead.firstName} ${newLead.lastName}`,
+                description: `Follow-up scheduled for lead ${newLead.firstName} ${newLead.lastName}${newLead.email ? ` (${newLead.email})` : ''}`,
+                type: "FOLLOW_UP",
+                priority: newLead.priority || "MEDIUM",
+                dueDate: new Date(leadData.nextFollowUpAt),
+                assignedToId: newLead.assignedToId,
+                leadId: newLead.id,
+              },
+            });
+          }
+
+          results.push({ row: rowNumber, status: "success", message: "Lead created", leadId: newLead.id });
+          successfulLeads.push(newLead.id);
+
+        } catch (error: any) {
+          console.error(`Error creating lead at row ${rowNumber}:`, error);
+          let errorMessage = error.message || "Unknown error";
+          if (error.errors && Array.isArray(error.errors)) {
+            errorMessage = error.errors.map((e: any) => e.message).join(", ");
+          }
+          results.push({ row: rowNumber, status: "error", message: errorMessage });
         }
-
-        results.push({
-          row: rowNumber,
-          status: "success",
-          message: "Lead created",
-          leadId: newLead.id,
-        });
-        successfulLeads.push(newLead.id);
-
-      } catch (error: any) {
-        console.error(`Error creating lead at row ${rowNumber}:`, error);
-
-        let errorMessage = "Unknown error";
-        if (error.errors && Array.isArray(error.errors)) {
-          errorMessage = error.errors.map((e: any) => e.message).join(", ");
-        } else if (error.message) {
-          errorMessage = error.message;
-        }
-
-        results.push({
-          row: rowNumber,
-          status: "error",
-          message: errorMessage,
-        });
-      }
+      }));
     }
 
     // Summary statistics
