@@ -67,6 +67,7 @@ export default function LeadsPage() {
   const [filterCampaign, setFilterCampaign] = useState<string>(campaignIdFromUrl || "all");
   const [filterLeadType, setFilterLeadType] = useState<string>("all");
   const [filterPriority, setFilterPriority] = useState<string>("all");
+  const [filterDateRange, setFilterDateRange] = useState<string>("all");
 
   // Bulk assign state
   const [selectedLeadIds, setSelectedLeadIds] = useState<Set<string>>(new Set());
@@ -184,7 +185,33 @@ export default function LeadsPage() {
     const matchesPriority =
       filterPriority === "all" || lead.priority === filterPriority;
 
-    return matchesSearch && matchesCampaign && matchesLeadType && matchesPriority;
+    let matchesDate = true;
+    if (filterDateRange !== "all" && lead.createdAt) {
+      const createdDate = new Date(lead.createdAt);
+      const now = new Date();
+      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      
+      if (filterDateRange === "today") {
+        matchesDate = createdDate >= today;
+      } else if (filterDateRange === "yesterday") {
+        const yesterday = new Date(today);
+        yesterday.setDate(yesterday.getDate() - 1);
+        matchesDate = createdDate >= yesterday && createdDate < today;
+      } else if (filterDateRange === "7days") {
+        const sevenDaysAgo = new Date(today);
+        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+        matchesDate = createdDate >= sevenDaysAgo;
+      } else if (filterDateRange === "30days") {
+        const thirtyDaysAgo = new Date(today);
+        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+        matchesDate = createdDate >= thirtyDaysAgo;
+      } else if (filterDateRange === "thisMonth") {
+        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+        matchesDate = createdDate >= startOfMonth;
+      }
+    }
+
+    return matchesSearch && matchesCampaign && matchesLeadType && matchesPriority && matchesDate;
   });
 
   // Calculate stats
@@ -389,7 +416,7 @@ export default function LeadsPage() {
       {/* Filters */}
       <Card>
         <CardContent className="pt-6">
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
             <div>
               <Input
                 placeholder="Search leads..."
@@ -433,6 +460,19 @@ export default function LeadsPage() {
                 <SelectItem value="MEDIUM">Medium</SelectItem>
                 <SelectItem value="HIGH">High</SelectItem>
                 <SelectItem value="URGENT">Urgent</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select value={filterDateRange} onValueChange={setFilterDateRange}>
+              <SelectTrigger>
+                <SelectValue placeholder="All Time" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Time</SelectItem>
+                <SelectItem value="today">Today</SelectItem>
+                <SelectItem value="yesterday">Yesterday</SelectItem>
+                <SelectItem value="7days">Last 7 Days</SelectItem>
+                <SelectItem value="30days">Last 30 Days</SelectItem>
+                <SelectItem value="thisMonth">This Month</SelectItem>
               </SelectContent>
             </Select>
           </div>
