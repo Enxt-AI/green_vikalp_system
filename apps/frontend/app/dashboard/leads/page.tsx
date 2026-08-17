@@ -68,6 +68,8 @@ export default function LeadsPage() {
   const [filterLeadType, setFilterLeadType] = useState<string>("all");
   const [filterPriority, setFilterPriority] = useState<string>("all");
   const [filterDateRange, setFilterDateRange] = useState<string>("all");
+  const [customStartDate, setCustomStartDate] = useState<string>("");
+  const [customEndDate, setCustomEndDate] = useState<string>("");
 
   // Bulk assign state
   const [selectedLeadIds, setSelectedLeadIds] = useState<Set<string>>(new Set());
@@ -208,6 +210,17 @@ export default function LeadsPage() {
       } else if (filterDateRange === "thisMonth") {
         const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
         matchesDate = createdDate >= startOfMonth;
+      } else if (filterDateRange === "custom") {
+        if (customStartDate) {
+          const start = new Date(customStartDate);
+          start.setHours(0, 0, 0, 0);
+          if (createdDate < start) matchesDate = false;
+        }
+        if (customEndDate) {
+          const end = new Date(customEndDate);
+          end.setHours(23, 59, 59, 999);
+          if (createdDate > end) matchesDate = false;
+        }
       }
     }
 
@@ -473,9 +486,45 @@ export default function LeadsPage() {
                 <SelectItem value="7days">Last 7 Days</SelectItem>
                 <SelectItem value="30days">Last 30 Days</SelectItem>
                 <SelectItem value="thisMonth">This Month</SelectItem>
+                <SelectItem value="custom">Custom Range</SelectItem>
               </SelectContent>
             </Select>
           </div>
+          
+          {filterDateRange === "custom" && (
+            <div className="mt-4 flex flex-wrap items-center gap-4 p-4 bg-neutral-50 rounded-lg border border-neutral-100 animate-in slide-in-from-top-2">
+              <div className="flex items-center gap-3">
+                <Label htmlFor="start-date" className="text-sm font-medium text-neutral-600">Start Date</Label>
+                <Input 
+                  id="start-date"
+                  type="date" 
+                  value={customStartDate} 
+                  onChange={e => setCustomStartDate(e.target.value)} 
+                  className="w-[160px] bg-white"
+                />
+              </div>
+              <div className="flex items-center gap-3">
+                <Label htmlFor="end-date" className="text-sm font-medium text-neutral-600">End Date</Label>
+                <Input 
+                  id="end-date"
+                  type="date" 
+                  value={customEndDate} 
+                  onChange={e => setCustomEndDate(e.target.value)} 
+                  className="w-[160px] bg-white"
+                />
+              </div>
+              {(customStartDate || customEndDate) && (
+                <Button 
+                  variant="ghost" 
+                  size="sm" 
+                  onClick={() => { setCustomStartDate(""); setCustomEndDate(""); }}
+                  className="text-neutral-500"
+                >
+                  Clear Range
+                </Button>
+              )}
+            </div>
+          )}
         </CardContent>
       </Card>
 
