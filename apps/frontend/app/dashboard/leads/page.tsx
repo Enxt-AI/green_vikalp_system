@@ -333,7 +333,7 @@ export default function LeadsPage() {
       return;
     }
 
-    const headers = [
+    const baseHeaders = [
       "Name",
       "Email",
       "Mobile",
@@ -347,19 +347,39 @@ export default function LeadsPage() {
       "Created At"
     ];
 
-    const rows = filteredLeads.map(lead => [
-      `${lead.firstName} ${lead.lastName}`,
-      lead.email || "",
-      lead.mobile || "",
-      lead.leadType,
-      lead.campaign?.name || "",
-      lead.currentStage?.name || "",
-      lead.priority,
-      lead.budgetMin || "",
-      lead.budgetMax || "",
-      lead.assignedTo?.fullName || "",
-      new Date(lead.createdAt).toLocaleDateString()
-    ]);
+    const activeCustomFields = Array.from(visibleCustomFields);
+    const headers = [...baseHeaders, ...activeCustomFields];
+
+    const rows = filteredLeads.map(lead => {
+      // Normalize name to convert styled math/unicode characters to standard ascii
+      const fullName = `${lead.firstName || ""} ${lead.lastName || ""}`.trim().normalize("NFKC");
+      
+      const rowData = [
+        fullName,
+        lead.email || "",
+        lead.mobile || "",
+        lead.leadType,
+        lead.campaign?.name || "",
+        lead.currentStage?.name || "",
+        lead.priority,
+        lead.budgetMin || "",
+        lead.budgetMax || "",
+        lead.assignedTo?.fullName || "",
+        new Date(lead.createdAt).toLocaleDateString()
+      ];
+
+      // Add custom field values
+      activeCustomFields.forEach(field => {
+        if (lead.customFields && typeof lead.customFields === 'object') {
+          const val = (lead.customFields as Record<string, any>)[field];
+          rowData.push(val !== undefined && val !== null ? String(val).normalize("NFKC") : "");
+        } else {
+          rowData.push("");
+        }
+      });
+
+      return rowData;
+    });
 
     const csvContent = [
       headers.join(","),
