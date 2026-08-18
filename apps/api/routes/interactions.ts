@@ -27,6 +27,13 @@ router.get("/", authenticate, async (req, res) => {
       if (endDate) where.occurredAt.lte = new Date(endDate as string);
     }
 
+    const userId = (req as any).user.userId;
+    const userRole = (req as any).user.role;
+
+    if (userRole !== "ADMIN") {
+      where.createdById = userId;
+    }
+
     const interactions = await prisma.interaction.findMany({
       where,
       include: {
@@ -65,6 +72,13 @@ router.get("/stats", authenticate, async (req, res) => {
       where.occurredAt = {};
       if (startDate) where.occurredAt.gte = new Date(startDate as string);
       if (endDate) where.occurredAt.lte = new Date(endDate as string);
+    }
+
+    const userId = (req as any).user.userId;
+    const userRole = (req as any).user.role;
+
+    if (userRole !== "ADMIN") {
+      where.createdById = userId;
     }
 
     // Count by type

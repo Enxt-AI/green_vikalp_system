@@ -258,6 +258,7 @@ router.get("/:id", authenticate, async (req, res) => {
           },
         },
         interactions: {
+          where: userRole !== "ADMIN" ? { createdById: userId } : undefined,
           include: {
             createdBy: {
               select: {
