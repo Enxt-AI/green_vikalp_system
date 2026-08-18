@@ -68,6 +68,7 @@ export default function LeadsPage() {
   const [filterLeadType, setFilterLeadType] = useState<string>("all");
   const [filterPriority, setFilterPriority] = useState<string>("all");
   const [filterDateRange, setFilterDateRange] = useState<string>("all");
+  const [filterEmployee, setFilterEmployee] = useState<string>("all");
   const [customStartDate, setCustomStartDate] = useState<string>("");
   const [customEndDate, setCustomEndDate] = useState<string>("");
 
@@ -139,10 +140,22 @@ export default function LeadsPage() {
     }
   }, []);
 
+  const fetchTeamMembers = useCallback(async () => {
+    try {
+      const users = await auth.listUsers();
+      setTeamMembers(users.filter((u) => u.isActive));
+    } catch (error) {
+      console.error("Failed to fetch team members:", error);
+    }
+  }, []);
+
   useEffect(() => {
     fetchLeads();
     fetchCampaigns();
-  }, [fetchLeads, fetchCampaigns]);
+    if (user?.role === "ADMIN" || user?.role === "MANAGER" || user?.role === "TEAM_LEADER") {
+      fetchTeamMembers();
+    }
+  }, [fetchLeads, fetchCampaigns, fetchTeamMembers, user?.role]);
 
   useEffect(() => {
     if (campaignIdFromUrl) {
@@ -187,6 +200,9 @@ export default function LeadsPage() {
     const matchesPriority =
       filterPriority === "all" || lead.priority === filterPriority;
 
+    const matchesEmployee =
+      filterEmployee === "all" || lead.assignedToId === filterEmployee;
+
     let matchesDate = true;
     if (filterDateRange !== "all" && lead.createdAt) {
       const createdDate = new Date(lead.createdAt);
@@ -224,7 +240,7 @@ export default function LeadsPage() {
       }
     }
 
-    return matchesSearch && matchesCampaign && matchesLeadType && matchesPriority && matchesDate;
+    return matchesSearch && matchesCampaign && matchesLeadType && matchesPriority && matchesDate && matchesEmployee;
   });
 
   // Calculate stats
@@ -276,12 +292,14 @@ export default function LeadsPage() {
   const isSomeSelected = selectedLeadIds.size > 0 && selectedLeadIds.size < filteredLeads.length;
 
   const handleOpenBulkAssign = async () => {
-    try {
-      const users = await auth.listUsers();
-      setTeamMembers(users.filter((u) => u.isActive));
-    } catch (error) {
-      toast.error("Failed to load team members");
-      return;
+    if (teamMembers.length === 0) {
+      try {
+        const users = await auth.listUsers();
+        setTeamMembers(users.filter((u) => u.isActive));
+      } catch (error) {
+        toast.error("Failed to load team members");
+        return;
+      }
     }
     setShowBulkAssignDialog(true);
   };
@@ -308,6 +326,55 @@ export default function LeadsPage() {
   };
 
   const canBulkAssign = user?.role === "ADMIN" || user?.role === "MANAGER" || user?.role === "TEAM_LEADER";
+
+  const handleExportCSV = () => {
+    if (filteredLeads.length === 0) {
+      toast.error("No leads to export");
+      return;
+    }
+
+    const headers = [
+      "Name",
+      "Email",
+      "Mobile",
+      "Type",
+      "Campaign",
+      "Stage",
+      "Priority",
+      "Budget Min",
+      "Budget Max",
+      "Assigned To",
+      "Created At"
+    ];
+
+    const rows = filteredLeads.map(lead => [
+      `${lead.firstName} ${lead.lastName}`,
+      lead.email || "",
+      lead.mobile || "",
+      lead.leadType,
+      lead.campaign?.name || "",
+      lead.currentStage?.name || "",
+      lead.priority,
+      lead.budgetMin || "",
+      lead.budgetMax || "",
+      lead.assignedTo?.fullName || "",
+      new Date(lead.createdAt).toLocaleDateString()
+    ]);
+
+    const csvContent = [
+      headers.join(","),
+      ...rows.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(","))
+    ].join("\n");
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `leads_export_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
   return (
     <div className="space-y-6">
@@ -339,6 +406,18 @@ export default function LeadsPage() {
           )}
         </div>
         <div className="flex gap-2">
+          <Button variant="outline" onClick={handleExportCSV}>
+            <svg
+              className="mr-2 h-4 w-4"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              strokeWidth={2}
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+            </svg>
+            Export CSV
+          </Button>
           <ImportLeadsDialog onLeadsImported={fetchLeads}>
             <Button variant="outline">
               <svg
@@ -429,7 +508,7 @@ export default function LeadsPage() {
       {/* Filters */}
       <Card>
         <CardContent className="pt-6">
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-6">
             <div>
               <Input
                 placeholder="Search leads..."
@@ -489,6 +568,21 @@ export default function LeadsPage() {
                 <SelectItem value="custom">Custom Range</SelectItem>
               </SelectContent>
             </Select>
+            {(user?.role === "ADMIN" || user?.role === "MANAGER" || user?.role === "TEAM_LEADER") && (
+              <Select value={filterEmployee} onValueChange={setFilterEmployee}>
+                <SelectTrigger>
+                  <SelectValue placeholder="All Employees" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Employees</SelectItem>
+                  {teamMembers.map((member) => (
+                    <SelectItem key={member.id} value={member.id}>
+                      {member.fullName}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
           </div>
           
           {filterDateRange === "custom" && (
