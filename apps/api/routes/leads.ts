@@ -358,11 +358,9 @@ router.post("/", authenticate, async (req, res) => {
     const userId = (req as any).user.userId;
     const userRole = (req as any).user.role;
 
-    // Check campaign access
-    const hasAccess = await canAccessCampaign(validatedData.campaignId, userId, userRole);
-    if (!hasAccess) {
-      return res.status(403).json({ error: "Access denied to this campaign" });
-    }
+    // Note: We deliberately skip `canAccessCampaign` check here. 
+    // This allows any authenticated employee (e.g. front desk) to manually add Walkin leads 
+    // to campaigns they might not be directly assigned to.
 
     // Verify campaign and stage exist
     const campaign = await prisma.campaign.findUnique({
