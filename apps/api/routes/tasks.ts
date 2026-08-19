@@ -24,7 +24,7 @@ router.patch("/follow-ups/:leadId", authenticate, async (req: Request, res: Resp
     }
 
     // Employees can only clear their own leads' follow-ups
-    if (role === "EMPLOYEE" && lead.assignedToId !== userId) {
+    if (role !== "ADMIN" && role !== "MANAGER" && lead.assignedToId !== userId) {
       console.log("Access denied:", { leadAssignedToId: lead.assignedToId, userId });
       return res.status(403).json({ error: "Forbidden" });
     }
@@ -52,7 +52,7 @@ router.get("/follow-ups", authenticate, async (req: Request, res: Response) => {
     
     // Employees see only their own leads
     // Admins/Managers see all leads
-    const where = role === "EMPLOYEE" 
+    const where = (role !== "ADMIN" && role !== "MANAGER")
       ? { assignedToId: userId, isArchived: false } 
       : { isArchived: false };
     
@@ -95,8 +95,8 @@ router.get("/follow-ups", authenticate, async (req: Request, res: Response) => {
 router.get("/follow-ups/stats", authenticate, async (req: Request, res: Response) => {
   try {
     const { role, userId } = req.user!;
-    const where = role === "EMPLOYEE" 
-      ? { ownerId: userId, isConverted: false } 
+    const where = (role !== "ADMIN" && role !== "MANAGER")
+      ? { assignedToId: userId, isConverted: false } 
       : { isConverted: false };
     
     const today = new Date();
@@ -154,7 +154,7 @@ router.get("/", authenticate, async (req: Request, res: Response) => {
     
     // Employees see only their own tasks
     // Admins/Managers see all tasks
-    const where = role === "EMPLOYEE" ? { assignedToId: userId } : {};
+    const where = (role !== "ADMIN" && role !== "MANAGER") ? { assignedToId: userId } : {};
     
     const tasks = await prisma.task.findMany({
       where,
@@ -187,7 +187,7 @@ router.get("/", authenticate, async (req: Request, res: Response) => {
 router.get("/stats", authenticate, async (req: Request, res: Response) => {
   try {
     const { role, userId } = req.user!;
-    const where = role === "EMPLOYEE" ? { assignedToId: userId } : {};
+    const where = (role !== "ADMIN" && role !== "MANAGER") ? { assignedToId: userId } : {};
     
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -309,7 +309,7 @@ router.patch("/:id/complete", authenticate, async (req: Request, res: Response) 
     }
     
     // Employees can only toggle their own tasks
-    if (role === "EMPLOYEE" && existingTask.assignedToId !== userId) {
+    if (role !== "ADMIN" && role !== "MANAGER" && existingTask.assignedToId !== userId) {
       res.status(403).json({ error: "Access denied" });
       return;
     }
@@ -358,7 +358,7 @@ router.delete("/:id", authenticate, async (req: Request, res: Response) => {
     }
     
     // Employees can only delete their own tasks
-    if (role === "EMPLOYEE" && existingTask.assignedToId !== userId) {
+    if (role !== "ADMIN" && role !== "MANAGER" && existingTask.assignedToId !== userId) {
       res.status(403).json({ error: "Access denied" });
       return;
     }
