@@ -5,7 +5,7 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Lead, PipelineStage } from "@/lib/api";
-import { Archive, Mail, Phone, User, Calendar, ArrowRight, GripVertical } from "lucide-react";
+import { Archive, Mail, Phone, User, Calendar, ArrowRight, GripVertical, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ArchiveLeadDialog } from "./archive-lead-dialog";
 
@@ -40,6 +40,8 @@ type KanbanBoardProps = {
   onMoveLeadToStage: (leadId: string, stageId: string) => Promise<void>;
   onArchiveLead: (leadId: string, reason?: string) => Promise<void>;
   onLeadClick?: (lead: Lead) => void;
+  onDeleteLead?: (leadId: string) => Promise<void>;
+  canDelete?: boolean;
 };
 
 type LeadCardProps = {
@@ -50,6 +52,8 @@ type LeadCardProps = {
   availableStages: PipelineStage[];
   onDragStart: (e: React.DragEvent) => void;
   isDragging: boolean;
+  onDelete?: () => Promise<void>;
+  canDelete?: boolean;
 };
 
 function LeadCard({ 
@@ -60,6 +64,8 @@ function LeadCard({
   availableStages,
   onDragStart,
   isDragging,
+  onDelete,
+  canDelete,
 }: LeadCardProps) {
   const [isMoving, setIsMoving] = useState(false);
   const [showActions, setShowActions] = useState(false);
@@ -217,6 +223,21 @@ function LeadCard({
                   <Archive className="h-3 w-3 mr-1" />
                   Archive
                 </Button>
+                {canDelete && onDelete && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-6 text-xs text-red-600 hover:text-red-700"
+                    onClick={async (e) => {
+                      e.stopPropagation();
+                      if (!confirm(`Permanently delete ${lead.firstName} ${lead.lastName}? This cannot be undone.`)) return;
+                      await onDelete();
+                    }}
+                  >
+                    <Trash2 className="h-3 w-3 mr-1" />
+                    Delete
+                  </Button>
+                )}
               </div>
             </div>
           )}
@@ -244,6 +265,8 @@ type StageColumnProps = {
   onDragStart: (leadId: string) => void;
   onDragEnd: () => void;
   onDrop: (stageId: string) => void;
+  onDeleteLead?: (leadId: string) => Promise<void>;
+  canDelete?: boolean;
 };
 
 function StageColumn({
@@ -257,6 +280,8 @@ function StageColumn({
   onDragStart,
   onDragEnd,
   onDrop,
+  onDeleteLead,
+  canDelete,
 }: StageColumnProps) {
   const [isDragOver, setIsDragOver] = useState(false);
 
@@ -354,6 +379,8 @@ function StageColumn({
                 onDragStart(lead.id);
               }}
               isDragging={draggedLeadId === lead.id}
+              onDelete={onDeleteLead ? () => onDeleteLead(lead.id) : undefined}
+              canDelete={canDelete}
             />
           ))
         )}
@@ -368,6 +395,8 @@ export function KanbanBoard({
   onMoveLeadToStage,
   onArchiveLead,
   onLeadClick,
+  onDeleteLead,
+  canDelete,
 }: KanbanBoardProps) {
   const [draggedLeadId, setDraggedLeadId] = useState<string | null>(null);
   const sortedStages = [...stages].sort((a, b) => a.order - b.order);
@@ -406,6 +435,8 @@ export function KanbanBoard({
             onDragStart={setDraggedLeadId}
             onDragEnd={() => setDraggedLeadId(null)}
             onDrop={handleDrop}
+            onDeleteLead={onDeleteLead}
+            canDelete={canDelete}
           />
         ))}
       </div>

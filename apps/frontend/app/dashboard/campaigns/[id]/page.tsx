@@ -13,7 +13,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { campaigns as campaignsApi, Lead } from "@/lib/api";
+import { campaigns as campaignsApi, leads as leadsApi, Lead } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { toast } from "sonner";
 import { ArrowLeft, Building2, MapPin, Star, Trash2, Plus, LayoutGrid, Columns3 } from "lucide-react";
@@ -84,6 +84,26 @@ export default function CampaignDetailPage() {
   const [viewMode, setViewMode] = useState<ViewMode>("overview");
   const [selectedStageId, setSelectedStageId] = useState<string | null>(null);
   const [convertingLead, setConvertingLead] = useState<string | null>(null);
+  const [deletingLead, setDeletingLead] = useState<string | null>(null);
+  const canDelete = user?.role === "ADMIN";
+
+  async function handleDeleteLead(leadId: string) {
+    if (!canDelete) {
+      toast.error("Only admins can permanently delete leads");
+      return;
+    }
+    if (!confirm("Permanently delete this lead? This cannot be undone.")) return;
+    try {
+      setDeletingLead(leadId);
+      const result = await leadsApi.delete(leadId);
+      toast.success(result.message || "Lead deleted permanently");
+      await loadLeads();
+    } catch (error: any) {
+      toast.error(error.message || "Failed to delete lead");
+    } finally {
+      setDeletingLead(null);
+    }
+  }
 
   useEffect(() => {
     if (campaignId) {
@@ -386,6 +406,7 @@ export default function CampaignDetailPage() {
                           {lead.archivedReason || "-"}
                         </TableCell>
                         <TableCell>
+                          <div className="flex gap-2">
                           <Button
                             variant="outline"
                             size="sm"
@@ -394,6 +415,17 @@ export default function CampaignDetailPage() {
                           >
                             {convertingLead === lead.id ? "Converting..." : "Convert to Lead"}
                           </Button>
+                          {canDelete && (
+                            <Button
+                              variant="destructive"
+                              size="sm"
+                              onClick={() => handleDeleteLead(lead.id)}
+                              disabled={deletingLead === lead.id}
+                            >
+                              {deletingLead === lead.id ? "Deleting..." : "Delete"}
+                            </Button>
+                          )}
+                          </div>
                         </TableCell>
                       </TableRow>
                     );
@@ -421,6 +453,8 @@ export default function CampaignDetailPage() {
                   onMoveLeadToStage={handleMoveLeadToStage}
                   onArchiveLead={handleArchiveLead}
                   onLeadClick={(lead) => router.push(`/dashboard/leads?id=${lead.id}`)}
+                  onDeleteLead={canDelete ? handleDeleteLead : undefined}
+                  canDelete={canDelete}
                 />
               )}
             </CardContent>

@@ -1436,4 +1436,31 @@ router.post("/bulk-assign", authenticate, async (req, res) => {
   }
 });
 
+// Bulk hard-delete leads (admin only, permanent)
+router.post("/bulk-delete", authenticate, requireRole("ADMIN"), async (req, res) => {
+  try {
+    const { leadIds } = req.body;
+
+    if (!leadIds || !Array.isArray(leadIds) || leadIds.length === 0) {
+      return res.status(400).json({ error: "leadIds array is required" });
+    }
+
+    if (leadIds.length > 100) {
+      return res.status(400).json({ error: "Cannot delete more than 100 leads at once" });
+    }
+
+    const result = await prisma.lead.deleteMany({
+      where: { id: { in: leadIds } },
+    });
+
+    res.json({
+      message: `${result.count} lead(s) deleted permanently`,
+      count: result.count,
+    });
+  } catch (error) {
+    console.error("Error bulk deleting leads:", error);
+    res.status(500).json({ error: "Failed to delete leads" });
+  }
+});
+
 export default router;

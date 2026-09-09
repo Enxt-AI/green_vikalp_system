@@ -896,6 +896,17 @@ export const leads = {
       body: { leadIds, assignedToId },
     }),
 
+  delete: (id: string) =>
+    request<{ message: string }>(`/leads/${id}`, {
+      method: "DELETE",
+    }),
+
+  bulkDelete: (leadIds: string[]) =>
+    request<{ message: string; count: number }>("/leads/bulk-delete", {
+      method: "POST",
+      body: { leadIds },
+    }),
+
   // Import APIs
   parseImport: async (data: { sourceType: "FILE" | "GOOGLE_SHEETS_URL" | "GOOGLE_DRIVE_FILE"; file?: File; url?: string; driveFileId?: string }) => {
     const formData = new FormData();

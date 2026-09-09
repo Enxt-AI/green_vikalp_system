@@ -326,6 +326,48 @@ export default function LeadsPage() {
   };
 
   const canBulkAssign = user?.role === "ADMIN" || user?.role === "MANAGER" || user?.role === "TEAM_LEADER";
+  const canDelete = user?.role === "ADMIN";
+
+  // Hard-delete state (ADMIN only, permanent)
+  const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
+  const [showBulkDeleteDialog, setShowBulkDeleteDialog] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  const handleDeleteSingle = async () => {
+    if (!deleteTargetId) return;
+    setDeleting(true);
+    try {
+      const result = await leadsApi.delete(deleteTargetId);
+      toast.success(result.message || "Lead deleted permanently");
+      setSelectedLeadIds((prev) => {
+        const next = new Set(prev);
+        next.delete(deleteTargetId);
+        return next;
+      });
+      setDeleteTargetId(null);
+      fetchLeads();
+    } catch (error: any) {
+      toast.error(error.message || "Failed to delete lead");
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedLeadIds.size === 0) return;
+    setDeleting(true);
+    try {
+      const result = await leadsApi.bulkDelete(Array.from(selectedLeadIds));
+      toast.success(result.message || "Leads deleted permanently");
+      setSelectedLeadIds(new Set());
+      setShowBulkDeleteDialog(false);
+      fetchLeads();
+    } catch (error: any) {
+      toast.error(error.message || "Failed to delete leads");
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   const handleExportCSV = () => {
     if (filteredLeads.length === 0) {
@@ -643,7 +685,7 @@ export default function LeadsPage() {
       </Card>
 
       {/* Floating Bulk Action Bar */}
-      {selectedLeadIds.size > 0 && canBulkAssign && (
+      {(selectedLeadIds.size > 0 && (canBulkAssign || canDelete)) && (
         <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 rounded-full border border-blue-200 bg-white shadow-xl px-4 py-2 animate-in slide-in-from-bottom-8 duration-300">
           <div className="flex items-center gap-2 px-2">
             <div className="flex h-6 w-6 items-center justify-center rounded-full bg-blue-100 text-xs font-bold text-blue-700">
@@ -662,6 +704,7 @@ export default function LeadsPage() {
           >
             Clear
           </Button>
+          {canBulkAssign && (
           <Button
             size="sm"
             className="bg-blue-600 hover:bg-blue-700 text-white rounded-full px-5 shadow-sm"
@@ -672,6 +715,20 @@ export default function LeadsPage() {
             </svg>
             Assign Selected
           </Button>
+          )}
+          {canDelete && (
+          <Button
+            size="sm"
+            variant="destructive"
+            className="rounded-full px-5 shadow-sm"
+            onClick={() => setShowBulkDeleteDialog(true)}
+          >
+            <svg className="mr-2 h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
+            </svg>
+            Delete Selected
+          </Button>
+          )}
         </div>
       )}
 
@@ -915,6 +972,7 @@ export default function LeadsPage() {
                         </TableCell>
                       ))}
                       <TableCell>
+                        <div className="flex items-center gap-1">
                         <EditLeadDialog leadId={lead.id} onLeadUpdated={fetchLeads}>
                           <Button variant="ghost" size="sm">
                             <svg
@@ -928,6 +986,26 @@ export default function LeadsPage() {
                             </svg>
                           </Button>
                         </EditLeadDialog>
+                        {canDelete && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                            title="Delete lead permanently"
+                            onClick={() => setDeleteTargetId(lead.id)}
+                          >
+                            <svg
+                              className="h-4 w-4"
+                              fill="none"
+                              viewBox="0 0 24 24"
+                              stroke="currentColor"
+                              strokeWidth={2}
+                            >
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
+                            </svg>
+                          </Button>
+                        )}
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -980,6 +1058,46 @@ export default function LeadsPage() {
               className="bg-blue-600 hover:bg-blue-700 text-white"
             >
               {bulkAssigning ? "Assigning..." : `Assign ${selectedLeadIds.size} Lead${selectedLeadIds.size > 1 ? "s" : ""}`}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Single Delete Confirm */}
+      <Dialog open={deleteTargetId !== null} onOpenChange={(open) => { if (!open) setDeleteTargetId(null); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Delete lead permanently?</DialogTitle>
+            <DialogDescription>
+              This action cannot be undone. The lead and its interactions, tasks, notes and documents will be permanently deleted.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteTargetId(null)} disabled={deleting}>
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={handleDeleteSingle} disabled={deleting}>
+              {deleting ? "Deleting..." : "Delete permanently"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Bulk Delete Confirm */}
+      <Dialog open={showBulkDeleteDialog} onOpenChange={setShowBulkDeleteDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Delete {selectedLeadIds.size} lead{selectedLeadIds.size > 1 ? "s" : ""} permanently?</DialogTitle>
+            <DialogDescription>
+              This action cannot be undone. All selected leads and their related data will be permanently deleted.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowBulkDeleteDialog(false)} disabled={deleting}>
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={handleBulkDelete} disabled={deleting}>
+              {deleting ? "Deleting..." : `Delete ${selectedLeadIds.size} permanently`}
             </Button>
           </DialogFooter>
         </DialogContent>
