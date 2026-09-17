@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { Skeleton, StatCardsSkeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
 
 export default function TasksPage() {
@@ -387,8 +388,21 @@ export default function TasksPage() {
 
       {/* Loading State */}
       {loading ? (
-        <div className="flex items-center justify-center py-12">
-          <div className="h-8 w-8 animate-spin rounded-full border-2 border-brand-200 border-t-brand-600" />
+        <div className="space-y-6">
+          <StatCardsSkeleton count={4} />
+          <div className="space-y-3">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} className="rounded-lg border border-neutral-200 bg-white p-4">
+                <div className="flex items-start gap-3">
+                  <Skeleton className="h-5 w-5 rounded" />
+                  <div className="flex-1">
+                    <Skeleton className="h-5 w-2/3" />
+                    <Skeleton className="mt-2 h-4 w-1/3" />
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       ) : (
         <div className="space-y-6">

@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
+import { FormSkeleton, Skeleton } from "@/components/ui/skeleton";
 
 type EditLeadDialogProps = {
   leadId: string;
@@ -267,12 +268,23 @@ export function EditLeadDialog({
     return (
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         {children && <DialogTrigger asChild>{children}</DialogTrigger>}
-        <DialogContent>
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-[700px]">
           <DialogHeader>
-            <DialogTitle>Loading...</DialogTitle>
+            <DialogTitle>Edit Lead</DialogTitle>
           </DialogHeader>
-          <div className="flex items-center justify-center p-8">
-            <div className="h-8 w-8 animate-spin rounded-full border-4 border-brand-200 border-t-brand-600" />
+          <div className="space-y-6 py-4">
+            <div className="space-y-4">
+              <Skeleton className="h-5 w-40" />
+              <div className="grid gap-4 sm:grid-cols-2">
+                {Array.from({ length: 6 }).map((_, i) => (
+                  <div key={i} className="space-y-2">
+                    <Skeleton className="h-4 w-24" />
+                    <Skeleton className="h-10 w-full" />
+                  </div>
+                ))}
+              </div>
+            </div>
+            <FormSkeleton rows={4} />
           </div>
         </DialogContent>
       </Dialog>

@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { toast } from "sonner";
 import { auth, integrations } from "@/lib/api";
 import { CACHE_TTLS, useCachedFetch } from "@/lib/cached-fetch";
+import { Skeleton } from "@/components/ui/skeleton";
 
 export default function GoogleDrivePage() {
   const [isLoading, setIsLoading] = useState(false);
@@ -95,7 +96,9 @@ export default function GoogleDrivePage() {
 
       {isConnected === null ? (
         <div className="flex min-h-[40vh] flex-col items-center justify-center space-y-4">
-          <div className="h-8 w-8 animate-spin rounded-full border-4 border-brand-200 border-t-brand-600" />
+          <Skeleton className="h-12 w-12 rounded-2xl" />
+          <Skeleton className="h-5 w-56" />
+          <Skeleton className="h-4 w-40" />
           <p className="text-sm text-neutral-500">Checking connection status...</p>
         </div>
       ) : isConnected === false ? (

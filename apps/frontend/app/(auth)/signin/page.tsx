@@ -17,6 +17,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { FormSkeleton, Skeleton } from "@/components/ui/skeleton";
 
 export default function SigninPage() {
   const router = useRouter();
@@ -164,8 +165,18 @@ export default function SigninPage() {
 
   if (isCheckingSetup || authLoading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-neutral-50">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-brand-200 border-t-brand-600" />
+      <div className="flex min-h-screen items-center justify-center bg-brand-50 p-8">
+        <div className="w-full max-w-sm space-y-4">
+          <div className="mb-8 flex flex-col items-center gap-3">
+            <Skeleton className="h-12 w-12 rounded-xl" />
+            <Skeleton className="h-6 w-48" />
+            <Skeleton className="h-4 w-64" />
+          </div>
+          <div className="rounded-xl border border-neutral-200 bg-white p-6">
+            <FormSkeleton rows={2} />
+            <Skeleton className="mt-4 h-10 w-full" />
+          </div>
+        </div>
       </div>
     );
   }

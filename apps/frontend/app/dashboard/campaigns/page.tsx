@@ -19,6 +19,7 @@ import { campaigns as campaignsApi, type Campaign } from "@/lib/api";
 import { CACHE_TTLS, invalidateCache, useCachedFetch } from "@/lib/cached-fetch";
 import { useAuth } from "@/lib/auth-context";
 import { CreateCampaignDialog } from "@/components/create-campaign-dialog";
+import { StatCardsSkeleton, TableSkeleton, Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
 
 const STATUS_STYLES = {
@@ -86,8 +87,13 @@ export default function CampaignsPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center p-8">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-brand-200 border-t-brand-600" />
+      <div className="space-y-6">
+        <div>
+          <Skeleton className="h-9 w-48" />
+          <Skeleton className="mt-2 h-4 w-72" />
+        </div>
+        <StatCardsSkeleton count={3} />
+        <TableSkeleton rows={6} cols={6} />
       </div>
     );
   }

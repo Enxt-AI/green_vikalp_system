@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { auth } from "@/lib/api";
+import { Skeleton } from "@/components/ui/skeleton";
 
 export default function Home() {
   const router = useRouter();
@@ -35,8 +36,10 @@ export default function Home() {
   }, [router]);
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-neutral-50">
-      <div className="h-8 w-8 animate-spin rounded-full border-4 border-brand-200 border-t-brand-600" />
+    <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-neutral-50 p-6">
+      <Skeleton className="h-12 w-12 rounded-2xl" />
+      <Skeleton className="h-5 w-48" />
+      <Skeleton className="h-4 w-32" />
     </div>
   );
 }

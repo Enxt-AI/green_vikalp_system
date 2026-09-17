@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
+import { FormSkeleton } from "@/components/ui/skeleton";
 
 type CreateCampaignDialogProps = {
   children?: React.ReactNode;
@@ -195,8 +196,8 @@ export function CreateCampaignDialog({
         </DialogHeader>
 
         {isLoading ? (
-          <div className="flex items-center justify-center py-8">
-            <div className="h-8 w-8 animate-spin rounded-full border-4 border-brand-200 border-t-brand-600" />
+          <div className="space-y-6 py-4">
+            <FormSkeleton rows={6} />
           </div>
         ) : (
           <div className="space-y-6 py-4">

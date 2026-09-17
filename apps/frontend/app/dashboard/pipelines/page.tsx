@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { pipelines as pipelinesApi, type Pipeline, type PipelineStage } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { CreatePipelineDialog } from "@/components/create-pipeline-dialog";
+import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
 import { Trash2 } from "lucide-react";
 
@@ -43,8 +44,24 @@ export default function PipelinesPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center p-8">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-brand-200 border-t-brand-600" />
+      <div className="space-y-6">
+        <div>
+          <Skeleton className="h-9 w-40" />
+          <Skeleton className="mt-2 h-4 w-64" />
+        </div>
+        <div className="grid gap-6">
+          {Array.from({ length: 2 }).map((_, i) => (
+            <div key={i} className="rounded-xl border border-neutral-200 bg-white p-6">
+              <Skeleton className="h-6 w-56" />
+              <Skeleton className="mt-2 h-4 w-80" />
+              <div className="mt-4 flex flex-wrap gap-2">
+                {Array.from({ length: 5 }).map((_, j) => (
+                  <Skeleton key={j} className="h-7 w-24 rounded-full" />
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
     );
   }

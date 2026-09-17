@@ -4,6 +4,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import { campaigns as campaignsApi, type Campaign, type Lead } from "@/lib/api";
 import { CACHE_TTLS, useCachedFetch } from "@/lib/cached-fetch";
+import { DetailSkeleton } from "@/components/ui/skeleton";
 import { MobileHeader } from "@/components/mobile/header";
 import { Button } from "@/components/ui/button";
 
@@ -29,8 +30,11 @@ export default function CampaignDetailsPage() {
 
   if (isAuthLoading || isLoading) {
     return (
-      <div className="flex h-screen items-center justify-center bg-neutral-50/50">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-brand-200 border-t-brand-600" />
+      <div className="flex h-screen flex-col bg-neutral-50/50">
+        <MobileHeader title="Loading..." />
+        <div className="flex-1 overflow-y-auto p-5">
+          <DetailSkeleton blocks={2} />
+        </div>
       </div>
     );
   }

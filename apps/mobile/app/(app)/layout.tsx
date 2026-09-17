@@ -6,6 +6,7 @@ import { useAuth } from "@/lib/auth-context";
 import { Home, Phone, Search, Menu } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { ScreenSkeleton } from "@/components/ui/skeleton";
 
 export default function AppLayout({
   children,
@@ -23,11 +24,7 @@ export default function AppLayout({
   }, [isLoading, isAuthenticated, router]);
 
   if (isLoading || !isAuthenticated) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-brand-50">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-brand-200 border-t-brand-600" />
-      </div>
-    );
+    return <ScreenSkeleton />;
   }
 
   const navItems = [

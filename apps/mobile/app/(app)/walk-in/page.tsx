@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { leads as leadsApi, campaigns as campaignsApi, pipelines as pipelinesApi, type Campaign, type Pipeline, type PipelineStage } from "@/lib/api";
 import { CACHE_TTLS, invalidateCache, useCachedFetch } from "@/lib/cached-fetch";
+import { FormSkeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -96,8 +97,8 @@ export default function WalkInPage() {
 
       <div className="flex-1 overflow-y-auto p-4">
         {isLoading ? (
-          <div className="flex justify-center p-8">
-            <div className="h-8 w-8 animate-spin rounded-full border-4 border-brand-200 border-t-brand-600" />
+          <div className="rounded-xl border border-brand-100 bg-white p-5">
+            <FormSkeleton rows={6} />
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="space-y-4">

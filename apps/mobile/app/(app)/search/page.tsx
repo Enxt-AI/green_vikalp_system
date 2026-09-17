@@ -7,6 +7,7 @@ import { useDeferredValue, useState } from "react";
 import Link from "next/link";
 import { leads as leadsApi, type Lead, type PagedResponse } from "@/lib/api";
 import { CACHE_TTLS, useCachedFetch } from "@/lib/cached-fetch";
+import { CardListSkeleton } from "@/components/ui/skeleton";
 
 export default function SearchPage() {
   const [query, setQuery] = useState("");
@@ -46,8 +47,8 @@ export default function SearchPage() {
             <p className="text-brand-500 max-w-[80%]">Type a name, phone number, or keyword in the search bar above.</p>
           </div>
         ) : loading && leads.length === 0 ? (
-          <div className="flex justify-center p-8">
-            <div className="h-8 w-8 animate-spin rounded-full border-4 border-brand-200 border-t-brand-600" />
+          <div className="mt-4 space-y-3">
+            <CardListSkeleton count={3} />
           </div>
         ) : leads.length === 0 ? (
           <div className="flex-1 flex flex-col items-center justify-center text-center mt-10">

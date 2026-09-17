@@ -18,6 +18,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { CreateUserDialog } from "@/components/create-user-dialog";
+import { TableSkeleton, Skeleton } from "@/components/ui/skeleton";
 import { UserStatsDialog } from "@/components/user-stats-dialog";
 
 export default function UsersPage() {
@@ -97,8 +98,14 @@ export default function UsersPage() {
 
   if (isLoading) {
     return (
-      <div className="flex min-h-[400px] items-center justify-center">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-brand-200 border-t-brand-600" />
+      <div className="min-h-[calc(100vh-4rem)] bg-white p-6">
+        <Skeleton className="h-7 w-48" />
+        <div className="mb-6 mt-6 flex items-center gap-3">
+          <Skeleton className="h-9 w-32" />
+          <Skeleton className="h-9 w-24" />
+          <Skeleton className="h-9 w-24" />
+        </div>
+        <TableSkeleton rows={8} cols={6} />
       </div>
     );
   }

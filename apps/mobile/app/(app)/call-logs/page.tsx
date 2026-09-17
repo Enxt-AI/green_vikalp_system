@@ -3,6 +3,7 @@
 import { MobileHeader } from "@/components/mobile/header";
 import { interactions as interactionsApi, type Interaction } from "@/lib/api";
 import { CACHE_TTLS, useCachedFetch } from "@/lib/cached-fetch";
+import { CardListSkeleton } from "@/components/ui/skeleton";
 import { PhoneCall, PhoneMissed, Clock, History, ChevronRight } from "lucide-react";
 import { toast } from "sonner";
 import Link from "next/link";
@@ -44,8 +45,8 @@ export default function CallLogsPage() {
       <MobileHeader title="Call Logs" />
 
       {isLoading ? (
-        <div className="flex flex-1 items-center justify-center">
-          <div className="h-8 w-8 animate-spin rounded-full border-4 border-brand-200 border-t-brand-600" />
+        <div className="flex-1 overflow-y-auto p-4 pb-[80px]">
+          <CardListSkeleton count={5} />
         </div>
       ) : logs.length === 0 ? (
         <div className="flex flex-1 flex-col items-center justify-center p-6 text-center">

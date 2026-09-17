@@ -5,6 +5,7 @@ import { MobileHeader } from "@/components/mobile/header";
 import { ChevronDown, PhoneCall } from "lucide-react";
 import { tasks as tasksApi, type Task } from "@/lib/api";
 import { CACHE_TTLS, useCachedFetch } from "@/lib/cached-fetch";
+import { CardListSkeleton } from "@/components/ui/skeleton";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 
@@ -46,9 +47,9 @@ export default function FollowUpsPage() {
 
         <div className="flex-1 overflow-y-auto p-4 space-y-3">
           {isLoading ? (
-             <div className="flex justify-center p-8">
-               <div className="h-8 w-8 animate-spin rounded-full border-4 border-brand-200 border-t-brand-600" />
-             </div>
+            <div className="space-y-3">
+              <CardListSkeleton count={4} />
+            </div>
           ) : followUps.length === 0 ? (
             <div className="flex flex-1 h-[60vh] flex-col items-center justify-center p-6 text-center">
               <div className="mb-4 rounded-full bg-brand-100 p-6 shadow-inner">

@@ -19,6 +19,7 @@ import { useAuth } from "@/lib/auth-context";
 import { toast } from "sonner";
 import { ArrowLeft, Building2, MapPin, Star, Trash2, Plus, LayoutGrid, Columns3 } from "lucide-react";
 import { AddPropertiesDialog } from "@/components/add-campaign-properties-dialog";
+import { DetailSkeleton, KanbanSkeleton, Skeleton, StatCardsSkeleton } from "@/components/ui/skeleton";
 import { KanbanBoard } from "@/components/kanban-board";
 import { CampaignAnalyticsChart } from "@/components/campaign-analytics-chart";
 
@@ -301,8 +302,21 @@ export default function CampaignDetailPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center p-8">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-brand-200 border-t-brand-600" />
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <Skeleton className="h-8 w-8 rounded-md" />
+            <Skeleton className="h-9 w-64" />
+            <Skeleton className="h-6 w-20" />
+          </div>
+          <div className="flex gap-2">
+            <Skeleton className="h-8 w-24" />
+            <Skeleton className="h-8 w-24" />
+            <Skeleton className="h-8 w-24" />
+          </div>
+        </div>
+        <StatCardsSkeleton count={4} />
+        <KanbanSkeleton cols={4} />
       </div>
     );
   }

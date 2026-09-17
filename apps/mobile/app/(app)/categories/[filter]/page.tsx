@@ -4,6 +4,7 @@ import { useDeferredValue, useMemo, useState } from "react";
 import { MobileHeader } from "@/components/mobile/header";
 import { leads as leadsApi, type Lead } from "@/lib/api";
 import { CACHE_TTLS, useCachedFetch } from "@/lib/cached-fetch";
+import { CardListSkeleton } from "@/components/ui/skeleton";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { Phone, Search } from "lucide-react";
@@ -90,9 +91,7 @@ export default function LeadListPage() {
 
       <div className="flex-1 overflow-y-auto p-5 space-y-4 pb-[100px]">
         {isLoading ? (
-          <div className="flex justify-center p-8">
-            <div className="h-8 w-8 animate-spin rounded-full border-4 border-brand-200 border-t-brand-600" />
-          </div>
+          <CardListSkeleton count={5} />
         ) : filteredLeads.length === 0 ? (
           <div className="text-center p-8 text-neutral-400 font-medium">No leads found</div>
         ) : (

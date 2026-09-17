@@ -3,6 +3,7 @@
 import { MobileHeader } from "@/components/mobile/header";
 import { pipelinesApi, type Pipeline, type PipelineStage } from "@/lib/api";
 import { CACHE_TTLS, useCachedFetch } from "@/lib/cached-fetch";
+import { CardListSkeleton } from "@/components/ui/skeleton";
 import Link from "next/link";
 import { ChevronRight, Check } from "lucide-react";
 
@@ -48,8 +49,8 @@ export default function LeadsCategoriesPage() {
         </div>
 
         {isLoading ? (
-          <div className="flex justify-center p-8">
-            <div className="h-8 w-8 animate-spin rounded-full border-4 border-brand-200 border-t-brand-600" />
+          <div className="space-y-4">
+            <CardListSkeleton count={5} />
           </div>
         ) : (
           <div className="space-y-4">

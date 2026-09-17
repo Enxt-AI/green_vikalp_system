@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { MobileHeader } from "@/components/mobile/header";
 import { leads as leadsApi, interactions as interactionsApi, documents as documentsApi, type Lead } from "@/lib/api";
 import { CACHE_TTLS, invalidateCache, useCachedFetch } from "@/lib/cached-fetch";
+import { DetailSkeleton } from "@/components/ui/skeleton";
 import { useParams, useRouter } from "next/navigation";
 import { Phone, MessageCircle, Mail, MessageSquare, ChevronDown, Paperclip, X } from "lucide-react";
 import { toast } from "sonner";
@@ -289,8 +290,8 @@ export default function LeadDetailsPage() {
     return (
       <div className="flex h-screen flex-col bg-brand-50">
         <MobileHeader title="Loading..." />
-        <div className="flex flex-1 items-center justify-center">
-          <div className="h-8 w-8 animate-spin rounded-full border-4 border-brand-200 border-t-brand-600" />
+        <div className="flex-1 overflow-y-auto p-4">
+          <DetailSkeleton blocks={3} />
         </div>
       </div>
     );

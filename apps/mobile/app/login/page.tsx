@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { useAuth } from "@/lib/auth-context";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { ScreenSkeleton } from "@/components/ui/skeleton";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -48,11 +49,7 @@ export default function LoginPage() {
   }
 
   if (authLoading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-brand-50">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-brand-200 border-t-brand-600" />
-      </div>
-    );
+    return <ScreenSkeleton />;
   }
 
   return (

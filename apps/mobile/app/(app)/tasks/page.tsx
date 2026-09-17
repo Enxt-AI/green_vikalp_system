@@ -3,6 +3,7 @@
 import { MobileHeader } from "@/components/mobile/header";
 import { tasks as tasksApi, type Task } from "@/lib/api";
 import { CACHE_TTLS, invalidateCache, useCachedFetch } from "@/lib/cached-fetch";
+import { CardListSkeleton } from "@/components/ui/skeleton";
 import { ClipboardList, CheckCircle2, Clock, Calendar } from "lucide-react";
 import { toast } from "sonner";
 
@@ -55,8 +56,8 @@ export default function TasksPage() {
       <MobileHeader title="My Tasks" />
 
       {isLoading ? (
-        <div className="flex flex-1 items-center justify-center">
-          <div className="h-8 w-8 animate-spin rounded-full border-4 border-brand-200 border-t-brand-600" />
+        <div className="flex-1 overflow-y-auto p-4 space-y-3 pb-[80px]">
+          <CardListSkeleton count={5} />
         </div>
       ) : tasks.length === 0 ? (
         <div className="flex flex-1 flex-col items-center justify-center p-6 text-center">

@@ -34,6 +34,7 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { AddLeadDialog } from "@/components/add-lead-dialog";
+import { StatCardsSkeleton, TableSkeleton, Skeleton } from "@/components/ui/skeleton";
 import { ImportLeadsDialog } from "@/components/import-leads-dialog";
 import { EditLeadDialog } from "@/components/edit-lead-dialog";
 import { leads as leadsApi, campaigns as campaignsApi, auth, type Lead, type Campaign, type LeadType, type Priority, type User, type PagedResponse, type LeadStats, type LeadListParams } from "@/lib/api";
@@ -768,8 +769,16 @@ export default function LeadsPage() {
 
       {/* Loading State */}
       {loading ? (
-        <div className="flex items-center justify-center py-12">
-          <div className="h-8 w-8 animate-spin rounded-full border-2 border-brand-200 border-t-brand-600" />
+        <div className="space-y-6">
+          <StatCardsSkeleton count={5} />
+          <div className="rounded-xl border border-neutral-200 bg-white p-4">
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-6">
+              {Array.from({ length: 6 }).map((_, i) => (
+                <Skeleton key={i} className="h-10 w-full" />
+              ))}
+            </div>
+          </div>
+          <TableSkeleton rows={8} cols={6} />
         </div>
       ) : filteredLeads.length === 0 ? (
         /* Empty State */

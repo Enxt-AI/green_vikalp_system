@@ -20,6 +20,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { properties as propertiesApi, campaigns as campaignsApi } from "@/lib/api";
+import { TableSkeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
 import { Search, MapPin, Building2 } from "lucide-react";
 
@@ -148,8 +149,8 @@ export function AddPropertiesDialog({
           {/* Properties list */}
           <div className="flex-1 overflow-auto border rounded-lg">
             {loading ? (
-              <div className="flex items-center justify-center p-8">
-                <div className="h-8 w-8 animate-spin rounded-full border-4 border-brand-200 border-t-brand-600" />
+              <div className="p-4">
+                <TableSkeleton rows={5} cols={5} />
               </div>
             ) : filteredProperties.length === 0 ? (
               <div className="text-center py-12">

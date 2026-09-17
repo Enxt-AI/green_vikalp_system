@@ -16,6 +16,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { FormSkeleton, Skeleton } from "@/components/ui/skeleton";
 
 export default function SetupPage() {
   const router = useRouter();
@@ -127,8 +128,18 @@ export default function SetupPage() {
 
   if (isLoading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-brand-50">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-brand-200 border-t-brand-700" />
+      <div className="flex min-h-screen items-center justify-center bg-brand-50 p-4">
+        <div className="w-full max-w-md">
+          <div className="mb-8 flex flex-col items-center gap-3">
+            <Skeleton className="h-12 w-12 rounded-xl" />
+            <Skeleton className="h-6 w-52" />
+            <Skeleton className="h-4 w-64" />
+          </div>
+          <div className="rounded-xl border border-brand-200 bg-white p-6">
+            <FormSkeleton rows={4} />
+            <Skeleton className="mt-4 h-10 w-full" />
+          </div>
+        </div>
       </div>
     );
   }

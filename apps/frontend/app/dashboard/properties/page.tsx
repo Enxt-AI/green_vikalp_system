@@ -17,6 +17,7 @@ import { properties as propertiesApi, type Property, type PagedResponse, type Pr
 import { CACHE_TTLS, invalidateCache, useCachedFetch } from "@/lib/cached-fetch";
 import { toast } from "sonner";
 import { CreatePropertyDialog } from "@/components/create-property-dialog";
+import { StatCardsSkeleton, TableSkeleton, Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/lib/auth-context";
 
 const STATUS_COLORS = {
@@ -90,8 +91,16 @@ export default function PropertiesPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center p-8">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-brand-200 border-t-brand-600" />
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <Skeleton className="h-9 w-44" />
+            <Skeleton className="mt-2 h-4 w-64" />
+          </div>
+          <Skeleton className="h-10 w-28" />
+        </div>
+        <StatCardsSkeleton count={4} />
+        <TableSkeleton rows={6} cols={6} />
       </div>
     );
   }

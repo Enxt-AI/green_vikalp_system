@@ -6,6 +6,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { useAuth } from "@/lib/auth-context";
 import { ChangePasswordDialog } from "@/components/change-password-dialog";
+import { Skeleton, StatCardsSkeleton, TableSkeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { FileSpreadsheet, FileText, HardDrive, Store, Phone, Home, Building2, Target, Zap, Globe, Users, Link as LinkIcon, LucideIcon } from "lucide-react";
 
@@ -97,8 +98,26 @@ export default function DashboardLayout({
 
   if (isLoading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-neutral-50">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-brand-200 border-t-brand-600" />
+      <div className="min-h-screen bg-neutral-50">
+        <div className="flex">
+          <aside className="hidden w-64 shrink-0 flex-col gap-2 border-r border-neutral-200 bg-white p-4 lg:flex">
+            <Skeleton className="h-10 w-full" />
+            {Array.from({ length: 7 }).map((_, i) => (
+              <Skeleton key={i} className="h-9 w-full" />
+            ))}
+          </aside>
+          <div className="flex-1">
+            <div className="flex h-16 items-center border-b border-neutral-200 bg-white px-4 lg:px-8">
+              <Skeleton className="h-8 w-40" />
+            </div>
+            <main className="space-y-6 p-4 lg:p-8">
+              <Skeleton className="h-8 w-56" />
+              <Skeleton className="h-4 w-80" />
+              <StatCardsSkeleton count={4} />
+              <TableSkeleton rows={5} cols={4} />
+            </main>
+          </div>
+        </div>
       </div>
     );
   }

@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { MobileHeader } from "@/components/mobile/header";
 import { campaigns as campaignsApi, type Campaign } from "@/lib/api";
 import { CACHE_TTLS, useCachedFetch } from "@/lib/cached-fetch";
+import { CardListSkeleton } from "@/components/ui/skeleton";
 import { Megaphone, Search, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -28,8 +29,8 @@ export default function CampaignsPage() {
       />
 
       {isLoading ? (
-        <div className="flex flex-1 items-center justify-center">
-          <div className="h-8 w-8 animate-spin rounded-full border-4 border-brand-200 border-t-brand-600" />
+        <div className="flex-1 overflow-y-auto p-5 pb-[80px]">
+          <CardListSkeleton count={4} />
         </div>
       ) : campaigns.length === 0 ? (
         <div className="flex flex-1 flex-col items-center justify-center p-6 text-center">
