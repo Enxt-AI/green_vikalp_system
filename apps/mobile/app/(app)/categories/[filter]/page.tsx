@@ -1,6 +1,6 @@
 "use client";
 
-import { useDeferredValue, useMemo, useState } from "react";
+import { useDeferredValue, useEffect, useMemo, useState } from "react";
 import { MobileHeader } from "@/components/mobile/header";
 import { leads as leadsApi, type Lead } from "@/lib/api";
 import { CACHE_TTLS, useCachedFetch } from "@/lib/cached-fetch";
@@ -11,10 +11,13 @@ import { Phone, Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 
+const PAGE_SIZE = 10;
+
 export default function LeadListPage() {
   const { filter } = useParams();
   const [search, setSearch] = useState("");
   const deferredSearch = useDeferredValue(search);
+  const [page, setPage] = useState(1);
 
   const { data: allLeadsData, loading: isLoading } = useCachedFetch<Lead[]>(
     "leads:all",
@@ -73,6 +76,17 @@ export default function LeadListPage() {
             (l.mobile && l.mobile.includes(deferredSearch.trim()))
         );
 
+  // Category filters are custom client-side logic the API can't express, so
+  // the cached list is paged locally: 10 rendered at a time.
+  const totalPages = Math.max(1, Math.ceil(filteredLeads.length / PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
+  const pagedLeads = filteredLeads.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+
+  // Reset to first page whenever category or search changes
+  useEffect(() => {
+    setPage(1);
+  }, [filter, deferredSearch]);
+
   return (
     <div className="flex h-screen flex-col bg-neutral-50/50 relative pb-[70px]">
       <MobileHeader title={title} />
@@ -95,7 +109,14 @@ export default function LeadListPage() {
         ) : filteredLeads.length === 0 ? (
           <div className="text-center p-8 text-neutral-400 font-medium">No leads found</div>
         ) : (
-          filteredLeads.map(lead => (
+          <>
+          {totalPages > 1 && (
+            <p className="text-xs font-semibold text-neutral-500 uppercase tracking-wider">
+              Showing {(safePage - 1) * PAGE_SIZE + 1}–
+              {Math.min(safePage * PAGE_SIZE, filteredLeads.length)} of {filteredLeads.length}
+            </p>
+          )}
+          {pagedLeads.map(lead => (
             <Link key={lead.id} href={`/leads/${lead.id}`} className="block">
               <div className="bg-white rounded-2xl p-5 shadow-[0_0_20px_rgba(0,0,0,0.15)] border border-neutral-200/60 active:bg-neutral-50 transition-colors">
                 <div className="flex justify-between items-start mb-2">
@@ -117,7 +138,31 @@ export default function LeadListPage() {
                 </div>
               </div>
             </Link>
-          ))
+          ))}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between gap-2 rounded-2xl border border-neutral-200/60 bg-white p-3">
+              <Button
+                variant="outline"
+                className="h-11 flex-1 rounded-xl font-semibold disabled:opacity-50"
+                disabled={safePage <= 1}
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+              >
+                ← Prev
+              </Button>
+              <span className="text-sm font-semibold text-neutral-700 whitespace-nowrap">
+                {safePage} / {totalPages}
+              </span>
+              <Button
+                variant="outline"
+                className="h-11 flex-1 rounded-xl font-semibold disabled:opacity-50"
+                disabled={safePage >= totalPages}
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              >
+                Next →
+              </Button>
+            </div>
+          )}
+          </>
         )}
       </div>
 
