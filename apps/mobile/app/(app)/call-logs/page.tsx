@@ -1,30 +1,23 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { MobileHeader } from "@/components/mobile/header";
 import { interactions as interactionsApi, type Interaction } from "@/lib/api";
+import { CACHE_TTLS, useCachedFetch } from "@/lib/cached-fetch";
 import { PhoneCall, PhoneMissed, Clock, History, ChevronRight } from "lucide-react";
 import { toast } from "sonner";
 import Link from "next/link";
 
 export default function CallLogsPage() {
-  const [logs, setLogs] = useState<Interaction[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-
-  useEffect(() => {
-    async function fetchCallLogs() {
-      try {
-        const data = await interactionsApi.list({ type: "CALL" });
-        setLogs(data);
-      } catch (error) {
-        console.error("Failed to fetch call logs", error);
-        toast.error("Failed to load call history");
-      } finally {
-        setIsLoading(false);
-      }
-    }
-    fetchCallLogs();
-  }, []);
+  const { data: logsData, loading: isLoading } = useCachedFetch<Interaction[]>(
+    "interactions:calls",
+    () => interactionsApi.list({ type: "CALL" }).catch((error) => {
+      console.error("Failed to fetch call logs", error);
+      toast.error("Failed to load call history");
+      throw error;
+    }),
+    { ttl: CACHE_TTLS.realtime }
+  );
+  const logs = logsData ?? [];
 
   const formatTime = (dateString: string) => {
     const date = new Date(dateString);

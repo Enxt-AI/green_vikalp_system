@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 import { MobileHeader } from "@/components/mobile/header";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { leads as leadsApi, campaigns as campaignsApi, pipelines as pipelinesApi, type Campaign, type Pipeline, type PipelineStage } from "@/lib/api";
+import { CACHE_TTLS, invalidateCache, useCachedFetch } from "@/lib/cached-fetch";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -12,10 +13,21 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 export default function WalkInPage() {
   const router = useRouter();
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
-  const [pipelines, setPipelines] = useState<Pipeline[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  
+  // Shared reference-data cache keys
+  const { data: campaignsData, loading: campaignsLoading } = useCachedFetch<Campaign[]>(
+    "campaigns:active",
+    () => campaignsApi.list({ status: "ACTIVE" }),
+    { ttl: CACHE_TTLS.reference }
+  );
+  const { data: pipelinesData, loading: pipelinesLoading } = useCachedFetch<Pipeline[]>(
+    "pipelines:all",
+    () => pipelinesApi.list(),
+    { ttl: CACHE_TTLS.reference }
+  );
+  const campaigns = campaignsData ?? [];
+  const pipelines = pipelinesData ?? [];
+  const isLoading = campaignsLoading || pipelinesLoading;
+
   const [formData, setFormData] = useState({
     firstName: "",
     lastName: "",
@@ -27,36 +39,18 @@ export default function WalkInPage() {
     currentStageId: "",
   });
 
+  // Preselect the first campaign + its first stage once reference data arrives
   useEffect(() => {
-    async function loadData() {
-      try {
-        setIsLoading(true);
-        const [campaignsData, pipelinesData] = await Promise.all([
-          campaignsApi.list({ status: "ACTIVE" }),
-          pipelinesApi.list()
-        ]);
-        
-        setCampaigns(campaignsData);
-        setPipelines(pipelinesData);
-        
-        if (campaignsData.length > 0) {
-          const firstCampaign = campaignsData[0];
-          const firstPipeline = pipelinesData.find(p => p.id === firstCampaign.pipelineId);
-          
-          setFormData(prev => ({
-            ...prev,
-            campaignId: firstCampaign.id,
-            currentStageId: firstPipeline?.stages[0]?.id || "",
-          }));
-        }
-      } catch (error) {
-        toast.error("Failed to load campaigns");
-      } finally {
-        setIsLoading(false);
-      }
+    if (formData.campaignId === "" && campaigns.length > 0) {
+      const firstCampaign = campaigns[0];
+      const firstPipeline = pipelines.find(p => p.id === firstCampaign.pipelineId);
+      setFormData(prev => prev.campaignId === "" ? ({
+        ...prev,
+        campaignId: firstCampaign.id,
+        currentStageId: firstPipeline?.stages[0]?.id || "",
+      }) : prev);
     }
-    loadData();
-  }, []);
+  }, [campaigns, pipelines, formData.campaignId]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -83,6 +77,8 @@ export default function WalkInPage() {
         budgetMax: formData.budgetMax ? parseInt(formData.budgetMax) : undefined,
       });
       toast.success("Walk-in lead created successfully!");
+      invalidateCache("leads:");
+      invalidateCache("lead-stats");
       router.push("/leads");
     } catch (error: any) {
       toast.error(error.message || "Failed to create lead");

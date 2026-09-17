@@ -1,42 +1,32 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { MobileHeader } from "@/components/mobile/header";
-import { pipelinesApi, type PipelineStage } from "@/lib/api";
+import { pipelinesApi, type Pipeline, type PipelineStage } from "@/lib/api";
+import { CACHE_TTLS, useCachedFetch } from "@/lib/cached-fetch";
 import Link from "next/link";
 import { ChevronRight, Check } from "lucide-react";
-import { toast } from "sonner";
 
 export default function LeadsCategoriesPage() {
-  const [stages, setStages] = useState<PipelineStage[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const { data: pipelinesData, loading: isLoading } = useCachedFetch<Pipeline[]>(
+    "pipelines:all",
+    () => pipelinesApi.list(),
+    { ttl: CACHE_TTLS.reference }
+  );
 
-  useEffect(() => {
-    async function loadStages() {
-      try {
-        const pipelines = await pipelinesApi.list();
-        // Extract all stages from all pipelines and deduplicate by name to keep the UI clean
-        const allStages: PipelineStage[] = [];
-        const seenNames = new Set<string>();
-        
-        pipelines.forEach(p => {
-          p.stages.forEach(s => {
-            if (!seenNames.has(s.name.toLowerCase())) {
-              seenNames.add(s.name.toLowerCase());
-              allStages.push(s);
-            }
-          });
-        });
-        
-        setStages(allStages);
-      } catch (error) {
-        toast.error("Failed to fetch pipeline stages");
-      } finally {
-        setIsLoading(false);
-      }
-    }
-    loadStages();
-  }, []);
+  // Extract all stages from all pipelines and deduplicate by name to keep the UI clean
+  const stages: PipelineStage[] = (() => {
+    const allStages: PipelineStage[] = [];
+    const seenNames = new Set<string>();
+    (pipelinesData ?? []).forEach((p) => {
+      p.stages.forEach((s) => {
+        if (!seenNames.has(s.name.toLowerCase())) {
+          seenNames.add(s.name.toLowerCase());
+          allStages.push(s);
+        }
+      });
+    });
+    return allStages;
+  })();
 
   const customCategories = [
     {

@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { auth, type User, ApiError } from "@/lib/api";
+import { CACHE_TTLS, invalidateCache, useCachedFetch } from "@/lib/cached-fetch";
 import { useAuth } from "@/lib/auth-context";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -22,40 +23,46 @@ import { UserStatsDialog } from "@/components/user-stats-dialog";
 export default function UsersPage() {
   const router = useRouter();
   const { user: currentUser } = useAuth();
-  const [users, setUsers] = useState<User[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
+
+  const isAdmin = !!currentUser && currentUser.role === "ADMIN";
+  const {
+    data: usersData,
+    loading: isLoading,
+    refresh: refreshUsers,
+    setData: setUsersData,
+  } = useCachedFetch<User[]>(
+    isAdmin ? "users:full" : null,
+    () =>
+      auth.listUsers().catch((error) => {
+        if (error instanceof ApiError && error.status === 403) {
+          router.replace("/dashboard");
+        } else {
+          toast.error("Failed to fetch users");
+        }
+        throw error;
+      }),
+    { ttl: CACHE_TTLS.reference, enabled: isAdmin }
+  );
+  const users = usersData ?? [];
 
   useEffect(() => {
     if (currentUser && currentUser.role !== "ADMIN") {
       router.replace("/dashboard");
-      return;
     }
-    fetchUsers();
   }, [currentUser, router]);
 
   async function fetchUsers() {
-    try {
-      const users = await auth.listUsers();
-      setUsers(users);
-    } catch (error) {
-      if (error instanceof ApiError && error.status === 403) {
-        router.replace("/dashboard");
-      } else {
-        toast.error("Failed to fetch users");
-      }
-    } finally {
-      setIsLoading(false);
-    }
+    invalidateCache("users:");
+    await refreshUsers();
   }
 
   async function handleToggleActive(userId: string) {
     try {
       const { user: updatedUser, message } = await auth.toggleUserActive(userId);
-      setUsers((prev) =>
-        prev.map((u) => (u.id === updatedUser.id ? { ...u, ...updatedUser } : u))
-      );
+      setUsersData((users ?? []).map((u) => (u.id === updatedUser.id ? { ...u, ...updatedUser } : u)));
+      invalidateCache("users:");
       toast.success(message);
     } catch (error) {
       if (error instanceof ApiError) {

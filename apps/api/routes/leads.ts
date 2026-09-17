@@ -14,6 +14,9 @@ import multer from "multer";
 import * as XLSX from "xlsx";
 import axios from "axios";
 import { getAutoAssignmentOrder, assignLeadsRoundRobin } from "../lib/auto-assign";
+import { parsePagination, paginated, wantsPagination } from "../lib/pagination";
+
+const isProd = process.env.NODE_ENV === "production";
 
 const router = Router();
 
@@ -54,8 +57,8 @@ router.get("/", authenticate, async (req, res) => {
   try {
     const userId = (req as any).user.userId;
     const userRole = (req as any).user.role;
-    console.log("Fetching leads for user:", userId, "with role:", userRole);
-    const { campaignId, stageId, assignedToId, leadType, isArchived } = req.query;
+    if (!isProd) console.log("Fetching leads for user:", userId, "with role:", userRole);
+    const { campaignId, stageId, assignedToId, leadType, isArchived, search, priority, from, to } = req.query;
 
     const where: any = {};
     const employeeRoles = ["EMPLOYEE", "TELE_CALLER", "FIELD_EXECUTIVE", "TEAM_LEADER"];
@@ -67,28 +70,28 @@ router.get("/", authenticate, async (req, res) => {
 
     // Campaign filter
     if (campaignId) {
-      console.log("Campaign ID provided:", campaignId);
+      if (!isProd) console.log("Campaign ID provided:", campaignId);
       const hasAccess = await canAccessCampaign(campaignId as string, userId, userRole);
       if (!hasAccess) {
         return res.status(403).json({ error: "Access denied to this campaign" });
       }
       where.campaignId = campaignId;
     } else if (employeeRoles.includes(userRole)) {
-      console.log("Entering employee campaign filter. User role is:", userRole);
+      if (!isProd) console.log("Entering employee campaign filter. User role is:", userRole);
       // Employees see leads from their assigned campaigns OR leads directly assigned to them
       const assignedCampaigns = await prisma.campaign.findMany({
         where: { assignedToIds: { has: userId } },
         select: { id: true },
       });
       const assignedIds = assignedCampaigns.map((c: { id: string }) => c.id);
-      console.log("Assigned campaigns:", assignedIds);
+      if (!isProd) console.log("Assigned campaigns:", assignedIds);
 
       where.OR = [
         { campaignId: { in: assignedIds } },
         { assignedToId: userId }
       ];
     } else {
-      console.log("Applying NO filtering. User role:", userRole);
+      if (!isProd) console.log("Applying NO filtering. User role:", userRole);
     }
 
     if (stageId) {
@@ -98,7 +101,7 @@ router.get("/", authenticate, async (req, res) => {
     if (assignedToId) {
       where.assignedToId = assignedToId;
     } else if (employeeRoles.includes(userRole)) {
-      console.log("Filtering by assigned lead to user:", userId);
+      if (!isProd) console.log("Filtering by assigned lead to user:", userId);
       // Employees must see leads assigned to them. 
       // If we are already filtering by assigned campaigns above, 
       // adding assignedToId here acts as an additional restrictor.
@@ -109,7 +112,34 @@ router.get("/", authenticate, async (req, res) => {
       where.leadType = leadType;
     }
 
-    const leads = await prisma.lead.findMany({
+    if (priority) {
+      where.priority = priority;
+    }
+
+    if (from || to) {
+      where.createdAt = {};
+      if (from) where.createdAt.gte = new Date(from as string);
+      if (to) where.createdAt.lte = new Date(to as string);
+    }
+
+    // Text search across name/email/phone. Kept as an AND clause so it
+    // composes with the employee OR-scope above instead of clobbering it.
+    if (search && String(search).trim() !== "") {
+      const q = String(search).trim();
+      where.AND = [
+        ...(Array.isArray(where.AND) ? where.AND : []),
+        {
+          OR: [
+            { firstName: { contains: q, mode: "insensitive" } },
+            { lastName: { contains: q, mode: "insensitive" } },
+            { email: { contains: q, mode: "insensitive" } },
+            { mobile: { contains: q, mode: "insensitive" } },
+          ],
+        },
+      ];
+    }
+
+    const listInclude = {
       where,
       include: {
         campaign: {
@@ -140,21 +170,29 @@ router.get("/", authenticate, async (req, res) => {
             email: true,
           },
         },
-        _count: {
-          select: {
-            interactions: true,
-            tasks: true,
-            meetings: true,
-            notes: true,
-            properties: true,
-          },
-        },
       },
-      orderBy: { createdAt: "desc" },
-    });
+      orderBy: { createdAt: "desc" as const },
+    };
 
-    console.log("Query 'where' clause:", JSON.stringify(where, null, 2));
-    console.log("Leads returned:", leads.length);
+    // NOTE: _count (interactions/tasks/meetings/notes/properties) is
+    // intentionally excluded from the list endpoint — it costs 5 aggregate
+    // queries per row. Counts are available on GET /leads/:id and /stats.
+    if (wantsPagination(req.query)) {
+      const { page, limit, skip } = parsePagination(req.query);
+      const [leads, total] = await Promise.all([
+        prisma.lead.findMany({ ...listInclude, skip, take: limit }),
+        prisma.lead.count({ where }),
+      ]);
+      if (!isProd) console.log("Leads returned:", leads.length, "of", total);
+      return res.json(paginated(leads, total, page, limit));
+    }
+
+    const leads = await prisma.lead.findMany(listInclude);
+
+    if (!isProd) {
+      console.log("Query 'where' clause:", JSON.stringify(where, null, 2));
+      console.log("Leads returned:", leads.length);
+    }
 
     res.json(leads);
   } catch (error) {

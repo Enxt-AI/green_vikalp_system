@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useAuth } from "@/lib/auth-context";
+import { CACHE_TTLS, invalidateCache, useCachedFetch } from "@/lib/cached-fetch";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -9,36 +10,34 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { leads as leadsApi, campaigns as campaignsApi, properties as propertiesApi, tasks as tasksApi } from "@/lib/api";
+import { leads as leadsApi, campaigns as campaignsApi, properties as propertiesApi, tasks as tasksApi, type Campaign, type LeadStats, type PropertyStats } from "@/lib/api";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
 export default function DashboardPage() {
   const { user } = useAuth();
   const router = useRouter();
-  const [totalLeads, setTotalLeads] = useState(0);
-  const [activeCampaigns, setActiveCampaigns] = useState(0);
-  const [totalProperties, setTotalProperties] = useState(0);
-  const [activeProperties, setActiveProperties] = useState(0);
+  // Stats come from lightweight endpoints, not full list fetches
+  const { data: leadStats } = useCachedFetch<LeadStats>("lead-stats:all", () => leadsApi.getStats(), {
+    ttl: CACHE_TTLS.realtime,
+  });
+  const { data: campaignsData } = useCachedFetch<Campaign[]>("campaigns:all", () => campaignsApi.list(), {
+    ttl: CACHE_TTLS.reference,
+  });
+  const { data: propertyStats } = useCachedFetch<PropertyStats>("property-stats", () => propertiesApi.getStats(), {
+    ttl: CACHE_TTLS.realtime,
+  });
+  const totalLeads = leadStats?.total ?? 0;
+  const activeCampaigns = (campaignsData ?? []).filter((c) => c.status === "ACTIVE").length;
+  const totalProperties = propertyStats?.total ?? 0;
+  const activeProperties = propertyStats?.active ?? 0;
   const [showTaskDialog, setShowTaskDialog] = useState(false);
   const [taskTitle, setTaskTitle] = useState("");
   const [taskDueDate, setTaskDueDate] = useState("");
   const [taskPriority, setTaskPriority] = useState<"LOW" | "MEDIUM" | "HIGH" | "URGENT">("MEDIUM");
   const [isCreatingTask, setIsCreatingTask] = useState(false);
 
-  useEffect(() => {
-    // Fetch real estate stats
-    leadsApi.list().then((data) => setTotalLeads(data.length)).catch(console.error);
-    campaignsApi.list().then((data) => {
-      const active = data.filter((c) => c.status === "ACTIVE").length;
-      setActiveCampaigns(active);
-    }).catch(console.error);
-    propertiesApi.list().then((data) => {
-      setTotalProperties(data.length);
-      const active = data.filter((p: any) => p.listingStatus === "ACTIVE").length;
-      setActiveProperties(active);
-    }).catch(console.error);
-  }, []);
+
 
   const handleCreateTask = async () => {
     if (!taskTitle.trim() || !taskDueDate) {
@@ -54,6 +53,7 @@ export default function DashboardPage() {
         priority: taskPriority,
       });
       toast.success("Task created successfully!");
+      invalidateCache("tasks:");
       setShowTaskDialog(false);
       setTaskTitle("");
       setTaskDueDate("");

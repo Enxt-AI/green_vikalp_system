@@ -169,6 +169,7 @@ model Lead {
   @@index([leadType, currentStageId])
   @@index([nextFollowUpAt])
   @@index([score, priority])
+  @@index([createdAt])
 }
 
 model Property {
@@ -207,6 +208,7 @@ model Property {
   @@index([city, state, zipCode])
   @@index([price, bedrooms, bathrooms])
   @@index([mlsNumber])
+  @@index([createdAt])
 }
 
 model PropertyInterest {

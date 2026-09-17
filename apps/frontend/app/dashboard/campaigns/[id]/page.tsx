@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useParams, useRouter } from "next/navigation";
+import { CACHE_TTLS, invalidateCache, useCachedFetch } from "@/lib/cached-fetch";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -77,15 +78,35 @@ export default function CampaignDetailPage() {
   const router = useRouter();
   const campaignId = params.id as string;
 
-  const [campaign, setCampaign] = useState<any>(null);
-  const [leads, setLeads] = useState<Lead[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Campaign-scoped cache: kanban + metrics need the full lead set for one
+  // campaign, which is small. Revisits render instantly.
+  const { data: campaignData, loading, refresh: refreshCampaign } = useCachedFetch<any>(
+    `campaign:${campaignId}`,
+    () => campaignsApi.get(campaignId),
+    { ttl: CACHE_TTLS.realtime }
+  );
+  const { data: leadsData, refresh: refreshLeads } = useCachedFetch<Lead[]>(
+    `campaign-leads:${campaignId}`,
+    () => campaignsApi.getLeads(campaignId),
+    { ttl: CACHE_TTLS.realtime }
+  );
+  const campaign = campaignData ?? null;
+  // Include ALL leads (archived and non-archived) for metrics calculation
+  const leads = leadsData ?? [];
   const [removingProperty, setRemovingProperty] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>("overview");
   const [selectedStageId, setSelectedStageId] = useState<string | null>(null);
   const [convertingLead, setConvertingLead] = useState<string | null>(null);
   const [deletingLead, setDeletingLead] = useState<string | null>(null);
   const canDelete = user?.role === "ADMIN";
+
+  function invalidateCampaignCaches() {
+    invalidateCache(`campaign:${campaignId}`);
+    invalidateCache(`campaign-leads:${campaignId}`);
+    invalidateCache("campaigns:");
+    invalidateCache("leads:");
+    invalidateCache("lead-stats");
+  }
 
   async function handleDeleteLead(leadId: string) {
     if (!canDelete) {
@@ -105,30 +126,21 @@ export default function CampaignDetailPage() {
     }
   }
 
-  useEffect(() => {
-    if (campaignId) {
-      loadCampaign();
-      loadLeads();
-    }
-  }, [campaignId]);
-
   async function loadCampaign() {
     try {
-      setLoading(true);
-      const data = await campaignsApi.get(campaignId);
-      setCampaign(data);
+      invalidateCampaignCaches();
+      const data = await refreshCampaign();
+      if (!data) toast.error("Failed to load campaign");
     } catch (error: any) {
       toast.error(error.message || "Failed to load campaign");
-    } finally {
-      setLoading(false);
     }
   }
 
   async function loadLeads() {
     try {
-      const data = await campaignsApi.getLeads(campaignId);
-      // Include ALL leads (archived and non-archived) for metrics calculation
-      setLeads(data);
+      invalidateCampaignCaches();
+      const data = await refreshLeads();
+      if (!data) toast.error("Failed to load leads");
     } catch (error: any) {
       toast.error(error.message || "Failed to load leads");
     }

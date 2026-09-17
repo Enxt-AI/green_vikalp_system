@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { CACHE_TTLS, invalidateCache, useCachedFetch } from "@/lib/cached-fetch";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -14,23 +14,19 @@ import { Trash2 } from "lucide-react";
 export default function PipelinesPage() {
   const { user } = useAuth();
   const router = useRouter();
-  const [pipelines, setPipelines] = useState<Pipeline[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    loadPipelines();
-  }, []);
+  const { data: pipelinesData, loading, refresh: refreshPipelines } = useCachedFetch<Pipeline[]>(
+    "pipelines:all",
+    () => pipelinesApi.list().catch((error: any) => {
+      toast.error(error.message || "Failed to load pipelines");
+      throw error;
+    }),
+    { ttl: CACHE_TTLS.reference }
+  );
+  const pipelines = pipelinesData ?? [];
 
   async function loadPipelines() {
-    try {
-      setLoading(true);
-      const data = await pipelinesApi.list();
-      setPipelines(data);
-    } catch (error: any) {
-      toast.error(error.message || "Failed to load pipelines");
-    } finally {
-      setLoading(false);
-    }
+    invalidateCache("pipelines:");
+    await refreshPipelines();
   }
 
   const handleDeletePipeline = async (e: React.MouseEvent, id: string) => {

@@ -1,20 +1,26 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useDeferredValue, useMemo, useState } from "react";
 import { MobileHeader } from "@/components/mobile/header";
 import { leads as leadsApi, type Lead } from "@/lib/api";
+import { CACHE_TTLS, useCachedFetch } from "@/lib/cached-fetch";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { Phone, Search } from "lucide-react";
-import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 
 export default function LeadListPage() {
   const { filter } = useParams();
-  const [leads, setLeads] = useState<Lead[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const deferredSearch = useDeferredValue(search);
+
+  const { data: allLeadsData, loading: isLoading } = useCachedFetch<Lead[]>(
+    "leads:all",
+    () => leadsApi.list(),
+    { ttl: CACHE_TTLS.realtime }
+  );
+  const allLeads = allLeadsData ?? [];
 
   const titleMap: Record<string, string> = {
     all: "All Leads",
@@ -26,48 +32,45 @@ export default function LeadListPage() {
 
   const isDynamicStage = (filter as string).startsWith("stage-");
   const stageId = isDynamicStage ? (filter as string).replace("stage-", "") : null;
+  const leads = useMemo(() => {
+    let filtered = allLeads;
+    if (isDynamicStage && stageId) {
+      filtered = filtered.filter((l) => l.currentStage.id === stageId);
+    } else if (filter === "uncontacted") {
+      filtered = filtered.filter(
+        (l) =>
+          ["new", "uncontacted", "leads"].includes(l.currentStage.name.toLowerCase()) ||
+          l.lastContactedAt === null
+      );
+    } else if (filter === "in-progress") {
+      filtered = filtered.filter(
+        (l) =>
+          !["new", "uncontacted", "leads", "won", "lost", "closed won", "closed lost", "archived"].includes(
+            l.currentStage.name.toLowerCase()
+          )
+      );
+    } else if (filter === "follow-up") {
+      filtered = filtered.filter((l) => l.nextFollowUpAt !== null);
+    } else if (filter === "not-connected") {
+      filtered = filtered.filter((l) =>
+        ["not connected", "call not connected", "disconnected"].includes(l.currentStage.name.toLowerCase())
+      );
+    }
+    return filtered;
+  }, [allLeads, filter, isDynamicStage, stageId]);
+
   const title = titleMap[filter as string] || (leads.length > 0 ? leads[0].currentStage.name : "Leads");
 
-  useEffect(() => {
-    async function loadLeads() {
-      try {
-        setIsLoading(true);
-        const data = await leadsApi.list();
-
-        let filtered = data;
-        if (isDynamicStage && stageId) {
-          filtered = data.filter(l => l.currentStage.id === stageId);
-        } else if (filter === "uncontacted") {
-          filtered = data.filter(l =>
-            ["new", "uncontacted", "leads"].includes(l.currentStage.name.toLowerCase()) ||
-            l.lastContactedAt === null
-          );
-        } else if (filter === "in-progress") {
-          filtered = data.filter(l =>
-            !["new", "uncontacted", "leads", "won", "lost", "closed won", "closed lost", "archived"].includes(l.currentStage.name.toLowerCase())
-          );
-        } else if (filter === "follow-up") {
-          filtered = data.filter(l => l.nextFollowUpAt !== null);
-        } else if (filter === "not-connected") {
-          filtered = data.filter(l =>
-            ["not connected", "call not connected", "disconnected"].includes(l.currentStage.name.toLowerCase())
-          );
-        }
-        setLeads(filtered);
-      } catch (error) {
-        toast.error("Failed to fetch leads");
-      } finally {
-        setIsLoading(false);
-      }
-    }
-    loadLeads();
-  }, [filter]);
-
-  const filteredLeads = leads.filter(l =>
-    l.firstName.toLowerCase().includes(search.toLowerCase()) ||
-    l.lastName.toLowerCase().includes(search.toLowerCase()) ||
-    (l.mobile && l.mobile.includes(search))
-  );
+  const q = deferredSearch.trim().toLowerCase();
+  const filteredLeads =
+    q === ""
+      ? leads
+      : leads.filter(
+          (l) =>
+            l.firstName.toLowerCase().includes(q) ||
+            l.lastName.toLowerCase().includes(q) ||
+            (l.mobile && l.mobile.includes(deferredSearch.trim()))
+        );
 
   return (
     <div className="flex h-screen flex-col bg-neutral-50/50 relative pb-[70px]">

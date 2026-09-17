@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useMemo, useState } from "react";
 import { tasks, leads as leadsApi, type Task, type Lead } from "@/lib/api";
+import { CACHE_TTLS, invalidateCache, useCachedFetch } from "@/lib/cached-fetch";
 import { useAuth } from "@/lib/auth-context";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -15,10 +16,6 @@ import { toast } from "sonner";
 
 export default function TasksPage() {
   const { user } = useAuth();
-  const [taskList, setTaskList] = useState<Task[]>([]);
-  const [leadsList, setLeadsList] = useState<Lead[]>([]);
-  const [stats, setStats] = useState({ dueToday: 0, upcoming: 0, expired: 0, completed: 0 });
-  const [loading, setLoading] = useState(true);
   const [showAddTask, setShowAddTask] = useState(false);
 
   // Form state
@@ -28,70 +25,76 @@ export default function TasksPage() {
   const [priority, setPriority] = useState<"LOW" | "MEDIUM" | "HIGH" | "URGENT">("MEDIUM");
   const [leadId, setLeadId] = useState("");
 
-  useEffect(() => {
-    loadData();
-    loadLeads();
-  }, []);
+  // Cached fetches — revisits render instantly, refresh silently in background
+  const {
+    data: tasksData,
+    loading: tasksLoading,
+    refresh: refreshTasks,
+  } = useCachedFetch<Task[]>("tasks:all", () => tasks.list(), {
+    ttl: CACHE_TTLS.realtime,
+  });
+  const { data: followUpsData, refresh: refreshFollowUps } = useCachedFetch<any[]>(
+    "tasks:follow-ups",
+    () => tasks.followUps.list(),
+    { ttl: CACHE_TTLS.realtime }
+  );
+  // Reuses the shared leads cache (same key as the leads page)
+  const { data: leadsData } = useCachedFetch<Lead[]>(
+    "leads:all",
+    () => leadsApi.list(),
+    { ttl: CACHE_TTLS.realtime }
+  );
+  const leadsList = leadsData ?? [];
+  const loading = tasksLoading && !tasksData;
+
+  const taskList = useMemo(() => {
+    const mappedFollowUps = (followUpsData ?? []).map((lead: any) => ({
+      id: `followup-${lead.id}`,
+      title: `Follow up with ${lead.firstName} ${lead.lastName}`,
+      description: `Stage: ${lead.currentStage?.name || 'Unknown'}`,
+      dueDate: lead.nextFollowUpAt,
+      priority: lead.priority || "MEDIUM",
+      isCompleted: false,
+      lead: { firstName: lead.firstName, lastName: lead.lastName },
+      isFollowUp: true,
+      leadId: lead.id
+    })) as any[];
+
+    return [...(tasksData ?? []), ...mappedFollowUps];
+  }, [tasksData, followUpsData]);
+
+  // Calculate stats from task list
+  const stats = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return {
+      dueToday: taskList.filter((t) => {
+        const d = new Date(t.dueDate);
+        d.setHours(0, 0, 0, 0);
+        return !t.isCompleted && d.getTime() === today.getTime();
+      }).length,
+      upcoming: taskList.filter((t) => {
+        const d = new Date(t.dueDate);
+        d.setHours(0, 0, 0, 0);
+        return !t.isCompleted && d.getTime() > today.getTime();
+      }).length,
+      expired: taskList.filter((t) => {
+        const d = new Date(t.dueDate);
+        d.setHours(0, 0, 0, 0);
+        return !t.isCompleted && d.getTime() < today.getTime();
+      }).length,
+      completed: taskList.filter((t) => t.isCompleted).length,
+    };
+  }, [taskList]);
 
   const loadData = async () => {
     try {
-      setLoading(true);
-      const [tasksData, followUpsData] = await Promise.all([
-        tasks.list(),
-        tasks.followUps.list()
-      ]);
-      
-      const mappedFollowUps = followUpsData.map((lead: any) => ({
-        id: `followup-${lead.id}`,
-        title: `Follow up with ${lead.firstName} ${lead.lastName}`,
-        description: `Stage: ${lead.currentStage?.name || 'Unknown'}`,
-        dueDate: lead.nextFollowUpAt,
-        priority: lead.priority || "MEDIUM",
-        isCompleted: false,
-        lead: { firstName: lead.firstName, lastName: lead.lastName },
-        isFollowUp: true,
-        leadId: lead.id
-      })) as any[];
-      
-      const allTasks = [...tasksData, ...mappedFollowUps];
-      setTaskList(allTasks);
-      
-      // Calculate stats from task list
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const calculatedStats = {
-        dueToday: allTasks.filter((t) => {
-          const d = new Date(t.dueDate);
-          d.setHours(0, 0, 0, 0);
-          return !t.isCompleted && d.getTime() === today.getTime();
-        }).length,
-        upcoming: allTasks.filter((t) => {
-          const d = new Date(t.dueDate);
-          d.setHours(0, 0, 0, 0);
-          return !t.isCompleted && d.getTime() > today.getTime();
-        }).length,
-        expired: allTasks.filter((t) => {
-          const d = new Date(t.dueDate);
-          d.setHours(0, 0, 0, 0);
-          return !t.isCompleted && d.getTime() < today.getTime();
-        }).length,
-        completed: allTasks.filter((t) => t.isCompleted).length,
-      };
-      setStats(calculatedStats);
+      invalidateCache("tasks:");
+      const [tasksRes, followUpsRes] = await Promise.all([refreshTasks(), refreshFollowUps()]);
+      if (!tasksRes || !followUpsRes) toast.error("Failed to load tasks");
     } catch (error) {
       console.error("Failed to load tasks:", error);
       toast.error("Failed to load tasks");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const loadLeads = async () => {
-    try {
-      const data = await leadsApi.list();
-      setLeadsList(data);
-    } catch (error) {
-      console.error("Failed to load leads:", error);
     }
   };
 

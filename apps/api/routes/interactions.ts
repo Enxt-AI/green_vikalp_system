@@ -3,6 +3,7 @@ import prisma from "@db/client";
 import { authenticate } from "../middleware/auth";
 import { createInteractionSchema } from "@repo/zod";
 import { processInteractionEvent } from "../lib/workflow-engine";
+import { parsePagination, paginated, wantsPagination } from "../lib/pagination";
 
 const router = Router();
 
@@ -34,7 +35,7 @@ router.get("/", authenticate, async (req, res) => {
       where.createdById = userId;
     }
 
-    const interactions = await prisma.interaction.findMany({
+    const listQuery = {
       where,
       include: {
         lead: {
@@ -51,8 +52,19 @@ router.get("/", authenticate, async (req, res) => {
           },
         },
       },
-      orderBy: { occurredAt: "desc" },
-    });
+      orderBy: { occurredAt: "desc" as const },
+    };
+
+    if (wantsPagination(req.query)) {
+      const { page, limit, skip } = parsePagination(req.query);
+      const [interactions, total] = await Promise.all([
+        prisma.interaction.findMany({ ...listQuery, skip, take: limit }),
+        prisma.interaction.count({ where }),
+      ]);
+      return res.json(paginated(interactions, total, page, limit));
+    }
+
+    const interactions = await prisma.interaction.findMany(listQuery);
 
     res.json(interactions);
   } catch (error) {

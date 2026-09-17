@@ -1,39 +1,31 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
+import { CACHE_TTLS, useCachedFetch } from "@/lib/cached-fetch";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { pipelines, campaigns } from "@/lib/api";
+import { pipelines, campaigns, type Campaign } from "@/lib/api";
 import { CopyIcon, CheckIcon } from "lucide-react";
 
 export default function IndiaMartIntegrationPage() {
-  const [isLoading, setIsLoading] = useState(false);
-  const [campaignsList, setCampaignsList] = useState<{ id: string; name: string }[]>([]);
   const [stagesList, setStagesList] = useState<{ id: string; name: string }[]>([]);
   const [copied, setCopied] = useState(false);
+
+  // Shared campaigns cache — revisits render instantly
+  const { data: campaignsData } = useCachedFetch<Campaign[]>(
+    "campaigns:all",
+    () => campaigns.list(),
+    { ttl: CACHE_TTLS.reference }
+  );
+  const campaignsList = (campaignsData ?? []).map(c => ({ id: c.id, name: c.name }));
 
   const [config, setConfig] = useState({
     campaignId: "",
     currentStageId: "",
   });
-
-  useEffect(() => {
-    async function init() {
-      setIsLoading(true);
-      try {
-        const camps = await campaigns.list();
-        setCampaignsList(camps.map(c => ({ id: c.id, name: c.name })));
-      } catch (error) {
-        toast.error("Failed to load campaigns");
-      } finally {
-        setIsLoading(false);
-      }
-    }
-    init();
-  }, []);
 
   async function handleCampaignChange(campaignId: string) {
     setConfig(prev => ({ ...prev, campaignId, currentStageId: "" }));

@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import { campaigns as campaignsApi, type Campaign, type Lead } from "@/lib/api";
+import { CACHE_TTLS, useCachedFetch } from "@/lib/cached-fetch";
 import { MobileHeader } from "@/components/mobile/header";
 import { Button } from "@/components/ui/button";
 
@@ -11,35 +11,21 @@ export default function CampaignDetailsPage() {
   const router = useRouter();
   const { id } = useParams<{ id: string }>();
   const { user, isLoading: isAuthLoading } = useAuth();
-  const [campaign, setCampaign] = useState<Campaign | null>(null);
-  const [leads, setLeads] = useState<Lead[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const canView = !!user && (user.role === "ADMIN" || user.role === "MANAGER");
 
-  useEffect(() => {
-    if (isAuthLoading || !user) return;
-    
-    // Check role: ADMIN or MANAGER
-    if (user.role !== "ADMIN" && user.role !== "MANAGER") {
-      setIsLoading(false);
-      return;
-    }
-
-    async function fetchData() {
-      try {
-        const [campaignData, leadsData] = await Promise.all([
-          campaignsApi.get(id),
-          campaignsApi.getLeads(id)
-        ]);
-        setCampaign(campaignData);
-        setLeads(leadsData);
-      } catch (error) {
-        console.error("Failed to fetch campaign data", error);
-      } finally {
-        setIsLoading(false);
-      }
-    }
-    fetchData();
-  }, [id, isAuthLoading, user]);
+  const { data: campaignData, loading: campaignLoading } = useCachedFetch<Campaign>(
+    canView ? `campaign:${id}` : null,
+    () => campaignsApi.get(id),
+    { ttl: CACHE_TTLS.realtime, enabled: canView && !isAuthLoading }
+  );
+  const { data: leadsData, loading: leadsLoading } = useCachedFetch<Lead[]>(
+    canView ? `campaign-leads:${id}` : null,
+    () => campaignsApi.getLeads(id),
+    { ttl: CACHE_TTLS.realtime, enabled: canView && !isAuthLoading }
+  );
+  const campaign = campaignData ?? null;
+  const leads = leadsData ?? [];
+  const isLoading = isAuthLoading || campaignLoading || leadsLoading;
 
   if (isAuthLoading || isLoading) {
     return (
@@ -49,7 +35,7 @@ export default function CampaignDetailsPage() {
     );
   }
 
-  if (!user || (user.role !== "ADMIN" && user.role !== "MANAGER")) {
+  if (!isAuthLoading && (!user || (user.role !== "ADMIN" && user.role !== "MANAGER"))) {
     return (
       <div className="flex h-screen flex-col bg-neutral-50/50">
         <MobileHeader title="Access Denied" />

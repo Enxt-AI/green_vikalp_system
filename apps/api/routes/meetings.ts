@@ -9,6 +9,7 @@ import {
   addEventToUserCalendar,
   removeEventFromUserCalendar,
 } from "../lib/google-calendar";
+import { parsePagination, wantsPagination } from "../lib/pagination";
 
 const router = Router();
 
@@ -20,7 +21,7 @@ router.get("/", authenticate, async (req: Request, res: Response) => {
     // Role-based filtering:
     // EMPLOYEE: See only meetings they organized or are invited to
     // MANAGER/ADMIN: See all meetings
-    const where =
+    const where: any =
       role === "EMPLOYEE"
         ? {
             OR: [
@@ -30,34 +31,67 @@ router.get("/", authenticate, async (req: Request, res: Response) => {
           }
         : {};
 
-    const meetings = await prisma.meeting.findMany({
-      where,
-      include: {
-        organizer: {
-          select: {
-            id: true,
-            fullName: true,
-          },
+    const { search, from, to } = req.query;
+    if (search && String(search).trim() !== "") {
+      where.AND = [
+        ...(Array.isArray(where.AND) ? where.AND : []),
+        { title: { contains: String(search).trim(), mode: "insensitive" } },
+      ];
+    }
+
+    // Start-time range filter (powers month-scoped calendar fetches and
+    // the "upcoming" slice without downloading the full history)
+    if (from || to) {
+      where.AND = [...(Array.isArray(where.AND) ? where.AND : [])];
+      if (from) where.AND.push({ startTime: { gte: new Date(from as string) } });
+      if (to) where.AND.push({ startTime: { lte: new Date(to as string) } });
+    }
+
+    const include = {
+      organizer: {
+        select: {
+          id: true,
+          fullName: true,
         },
-        lead: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-          },
+      },
+      lead: {
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
         },
-        attendees: {
-          include: {
-            user: {
-              select: {
-                id: true,
-                fullName: true,
-                email: true,
-              },
+      },
+      attendees: {
+        include: {
+          user: {
+            select: {
+              id: true,
+              fullName: true,
+              email: true,
             },
           },
         },
       },
+    };
+
+    if (wantsPagination(req.query)) {
+      const { page, limit, skip } = parsePagination(req.query);
+      const [meetings, total] = await Promise.all([
+        prisma.meeting.findMany({ where, include, orderBy: { startTime: "asc" }, skip, take: limit }),
+        prisma.meeting.count({ where }),
+      ]);
+      return res.json({
+        meetings,
+        total,
+        page,
+        limit,
+        totalPages: Math.max(1, Math.ceil(total / limit)),
+      });
+    }
+
+    const meetings = await prisma.meeting.findMany({
+      where,
+      include,
       orderBy: { startTime: "asc" },
     });
 

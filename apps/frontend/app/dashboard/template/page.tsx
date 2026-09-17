@@ -8,8 +8,9 @@ import {
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import {
-  campaigns, pipelines, meetings, leads, workflowsApi, documents, integrations, auth, type User
+  campaigns, pipelines, meetings, leads, workflowsApi, documents, integrations, auth, type Campaign, type User
 } from "@/lib/api";
+import { CACHE_TTLS, invalidateCache, useCachedFetch } from "@/lib/cached-fetch";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -27,33 +28,33 @@ const STEPS = [
 export default function TemplateWizardPage() {
   const router = useRouter();
   const [showWizard, setShowWizard] = useState(false);
-  const [createdTemplates, setCreatedTemplates] = useState<any[]>([]);
-  const [loadingTemplates, setLoadingTemplates] = useState(true);
+
+  // Shared cache keys — template cards are campaigns, so revisits are instant
+  const {
+    data: templatesData,
+    loading: loadingTemplates,
+    refresh: refreshTemplates,
+  } = useCachedFetch<Campaign[]>(
+    "campaigns:all",
+    () =>
+      campaigns.list().catch((err) => {
+        console.error(err);
+        toast.error("Failed to load templates");
+        throw err;
+      }),
+    { ttl: CACHE_TTLS.reference }
+  );
+  const createdTemplates = templatesData ?? [];
+
+  const { data: usersData } = useCachedFetch<User[]>(
+    showWizard ? "users:active" : null,
+    () => auth.listUsers().then((users) => users.filter((u) => u.isActive)),
+    { ttl: CACHE_TTLS.reference, enabled: showWizard }
+  );
+  const usersList = usersData ?? [];
 
   const [currentStep, setCurrentStep] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [usersList, setUsersList] = useState<User[]>([]);
-
-  useEffect(() => {
-    if (showWizard) {
-      auth.listUsers()
-        .then(users => setUsersList(users.filter(u => u.isActive)))
-        .catch(console.error);
-    }
-  }, [showWizard]);
-
-  useEffect(() => {
-    if (!showWizard) {
-      setLoadingTemplates(true);
-      campaigns.list()
-        .then(data => setCreatedTemplates(data))
-        .catch(err => {
-          console.error(err);
-          toast.error("Failed to load templates");
-        })
-        .finally(() => setLoadingTemplates(false));
-    }
-  }, [showWizard]);
 
   const handleDeleteTemplate = async (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
@@ -61,7 +62,8 @@ export default function TemplateWizardPage() {
     try {
       await campaigns.delete(id);
       toast.success("Template deleted successfully");
-      setCreatedTemplates(prev => prev.filter(t => t.id !== id));
+      invalidateCache("campaigns:");
+      await refreshTemplates();
     } catch (error: any) {
       toast.error(error.message || "Failed to delete template");
     }
@@ -323,8 +325,9 @@ export default function TemplateWizardPage() {
       }
 
       toast.success("Project Setup Complete! All entities have been created successfully.", { id: "template-creation" });
-      const updatedCampaigns = await campaigns.list();
-      setCreatedTemplates(updatedCampaigns);
+      invalidateCache("campaigns:");
+      invalidateCache("pipelines:");
+      await refreshTemplates();
       setShowWizard(false);
       setCurrentStep(0);
     } catch (error: any) {

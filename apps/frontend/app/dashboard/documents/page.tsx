@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "@/lib/auth-context";
 import { folders, documents, users, type Folder, type ManagedDocument, type User } from "@/lib/api";
+import { CACHE_TTLS, invalidateCache, useCachedFetch } from "@/lib/cached-fetch";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -47,44 +48,43 @@ const Checkbox = ({ checked, onCheckedChange }: { checked: boolean; onCheckedCha
 
 export default function DocumentsPage() {
   const { user } = useAuth();
-  const [folderList, setFolderList] = useState<Folder[]>([]);
-  const [documentList, setDocumentList] = useState<ManagedDocument[]>([]);
-  const [userList, setUserList] = useState<User[]>([]);
-  const [loading, setLoading] = useState(true);
+  const isAdmin = user?.role === "ADMIN";
+
+  // Cached fetches — revisits render instantly, refresh silently in background.
+  // Backend already filters folders/documents by access permissions.
+  const { data: folderData, loading: foldersLoading, refresh: refreshFolders } = useCachedFetch<Folder[]>(
+    "folders:all",
+    () => folders.list(), // Returns only accessible folders
+    { ttl: CACHE_TTLS.reference }
+  );
+  const { data: docsData, loading: docsLoading, refresh: refreshDocs } = useCachedFetch<ManagedDocument[]>(
+    "documents:all",
+    () => documents.list(),
+    { ttl: CACHE_TTLS.realtime }
+  );
+  const { data: usersData } = useCachedFetch<User[]>(
+    isAdmin ? "users:full" : null,
+    () => users.list().then((res) => res.users),
+    { ttl: CACHE_TTLS.reference, enabled: isAdmin }
+  );
+  const folderList = folderData ?? [];
+  const documentList = docsData ?? [];
+  const userList = usersData ?? [];
+  const loading = foldersLoading && docsLoading && !folderData && !docsData;
   const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
 
   // Dialog states
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
   const [createFolderDialogOpen, setCreateFolderDialogOpen] = useState(false);
 
-  const isAdmin = user?.role === "ADMIN";
-
-  useEffect(() => {
-    loadData();
-  }, []);
-
   const loadData = async () => {
     try {
-      setLoading(true);
-
-      // Load folders and documents for all users
-      // Backend already filters by access permissions
-      const [foldersData, docsData] = await Promise.all([
-        folders.list(), // Returns only accessible folders
-        documents.list(),
-      ]);
-      setFolderList(foldersData);
-      setDocumentList(docsData);
-
-      // Load users list if admin
-      if (isAdmin) {
-        const { users: usersData } = await users.list();
-        setUserList(usersData);
-      }
+      invalidateCache("folders:");
+      invalidateCache("documents:");
+      invalidateCache("users:");
+      await Promise.all([refreshFolders(), refreshDocs()]);
     } catch (error) {
       console.error("Failed to load data:", error);
-    } finally {
-      setLoading(false);
     }
   };
 

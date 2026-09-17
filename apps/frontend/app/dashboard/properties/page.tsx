@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useDeferredValue, useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -13,7 +13,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { properties as propertiesApi, type Property } from "@/lib/api";
+import { properties as propertiesApi, type Property, type PagedResponse, type PropertyStats } from "@/lib/api";
+import { CACHE_TTLS, invalidateCache, useCachedFetch } from "@/lib/cached-fetch";
 import { toast } from "sonner";
 import { CreatePropertyDialog } from "@/components/create-property-dialog";
 import { useAuth } from "@/lib/auth-context";
@@ -27,28 +28,54 @@ const STATUS_COLORS = {
   WITHDRAWN: "bg-red-100 text-red-700",
 };
 
+const PAGE_SIZE = 50;
+
 export default function PropertiesPage() {
   const { user } = useAuth();
-  const [properties, setProperties] = useState<Property[]>([]);
-  const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
+  // Debounced server search — avoids a request per keystroke
+  const deferredSearch = useDeferredValue(searchQuery);
+  const [page, setPage] = useState(1);
 
   const canManageProperties = user?.role === "ADMIN" || user?.role === "MANAGER" || user?.role === "EMPLOYEE";
 
+  const searchParam = deferredSearch.trim() === "" ? undefined : deferredSearch.trim();
+  const cacheKey = `properties:page:${page}:${searchParam ?? "all"}`;
+  const {
+    data: pagedData,
+    loading,
+    refreshing,
+    refresh,
+  } = useCachedFetch<PagedResponse<Property>>(
+    cacheKey,
+    () =>
+      propertiesApi
+        .listPaged({ search: searchParam, page, limit: PAGE_SIZE })
+        .catch((error: any) => {
+          toast.error(error.message || "Failed to load properties");
+          throw error;
+        }),
+    { ttl: CACHE_TTLS.realtime }
+  );
+  const properties = pagedData?.data ?? [];
+  const total = pagedData?.total ?? 0;
+  const totalPages = pagedData?.totalPages ?? 1;
+
+  // Summary cards come from the lightweight /stats endpoint
+  const { data: stats } = useCachedFetch<PropertyStats>(
+    "property-stats",
+    () => propertiesApi.getStats(),
+    { ttl: CACHE_TTLS.realtime }
+  );
+
+  // Reset to first page whenever search changes
   useEffect(() => {
-    loadProperties();
-  }, []);
+    setPage(1);
+  }, [searchParam]);
 
   async function loadProperties() {
-    try {
-      setLoading(true);
-      const data = await propertiesApi.list();
-      setProperties(data);
-    } catch (error: any) {
-      toast.error(error.message || "Failed to load properties");
-    } finally {
-      setLoading(false);
-    }
+    invalidateCache("property-stats");
+    await refresh();
   }
 
   const formatCurrency = (amount: number) => {
@@ -59,16 +86,7 @@ export default function PropertiesPage() {
     }).format(amount);
   };
 
-  const filteredProperties = properties.filter((property) => {
-    const query = searchQuery.toLowerCase();
-    return (
-      property.address.toLowerCase().includes(query) ||
-      property.city.toLowerCase().includes(query) ||
-      property.state.toLowerCase().includes(query) ||
-      property.zipCode.includes(query) ||
-      property.mlsNumber?.toLowerCase().includes(query)
-    );
-  });
+  const filteredProperties = properties;
 
   if (loading) {
     return (
@@ -101,7 +119,7 @@ export default function PropertiesPage() {
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold text-neutral-900">
-              {properties.length}
+              {stats?.total ?? "—"}
             </div>
           </CardContent>
         </Card>
@@ -114,7 +132,7 @@ export default function PropertiesPage() {
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold text-green-600">
-              {properties.filter((p) => p.listingStatus === "ACTIVE").length}
+              {stats?.active ?? "—"}
             </div>
           </CardContent>
         </Card>
@@ -127,7 +145,7 @@ export default function PropertiesPage() {
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold text-yellow-600">
-              {properties.filter((p) => p.listingStatus === "PENDING").length}
+              {stats?.pending ?? "—"}
             </div>
           </CardContent>
         </Card>
@@ -140,7 +158,7 @@ export default function PropertiesPage() {
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold text-blue-600">
-              {properties.filter((p) => p.listingStatus === "SOLD").length}
+              {stats?.sold ?? "—"}
             </div>
           </CardContent>
         </Card>
@@ -149,7 +167,12 @@ export default function PropertiesPage() {
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">
-            <CardTitle>All Properties</CardTitle>
+            <CardTitle>
+              All Properties ({total})
+              {refreshing && (
+                <span className="ml-2 text-xs font-normal text-neutral-400">Updating…</span>
+              )}
+            </CardTitle>
             <Input
               placeholder="Search by address, city, MLS..."
               value={searchQuery}
@@ -224,6 +247,35 @@ export default function PropertiesPage() {
                   ))}
                 </TableBody>
               </Table>
+            </div>
+          )}
+          {totalPages > 1 && (
+            <div className="flex flex-wrap items-center justify-between gap-3 pt-4">
+              <p className="text-sm text-neutral-500">
+                Showing {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, total)} of{" "}
+                {total} properties
+              </p>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={page <= 1}
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                >
+                  ← Prev
+                </Button>
+                <span className="text-sm font-medium text-neutral-700">
+                  Page {page} of {totalPages}
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={page >= totalPages}
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                >
+                  Next →
+                </Button>
+              </div>
             </div>
           )}
         </CardContent>

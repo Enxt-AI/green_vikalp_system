@@ -1,15 +1,17 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useDeferredValue, useEffect, useMemo, useState } from "react";
 import {
   meetings as meetingsApi,
   googleCalendar,
   auth,
   type Meeting,
   type MeetingInvite,
+  type PagedResponse,
   type User,
   type GoogleCalendarStatus,
 } from "@/lib/api";
+import { CACHE_TTLS, invalidateCache, useCachedFetch } from "@/lib/cached-fetch";
 import { useAuth } from "@/lib/auth-context";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -28,11 +30,60 @@ import { toast } from "sonner";
 
 export default function MeetingsPage() {
   const { user: currentUser } = useAuth();
-  const [meetingsList, setMeetingsList] = useState<Meeting[]>([]);
-  const [invites, setInvites] = useState<MeetingInvite[]>([]);
-  const [users, setUsers] = useState<User[]>([]);
-  const [loading, setLoading] = useState(true);
   const [currentDate, setCurrentDate] = useState(new Date());
+  const [searchInput, setSearchInput] = useState("");
+  // Debounced server search — avoids a request per keystroke
+  const deferredSearch = useDeferredValue(searchInput.trim());
+
+  // Month-scoped fetch: the calendar only ever needs one month of meetings.
+  // Navigating months fetches just that slice; revisits render from cache.
+  const monthKey = useMemo(() => {
+    const y = currentDate.getFullYear();
+    const m = currentDate.getMonth();
+    const from = new Date(y, m, 1, 0, 0, 0, 0).toISOString();
+    const to = new Date(y, m + 1, 0, 23, 59, 59, 999).toISOString();
+    return { key: `meetings:month:${y}-${m}`, from, to };
+  }, [currentDate]);
+  const {
+    data: meetingsData,
+    loading,
+    refreshing: meetingsRefreshing,
+    refresh: refreshMeetings,
+  } = useCachedFetch<Meeting[]>(monthKey.key, () => meetingsApi.list({ from: monthKey.from, to: monthKey.to }), {
+    ttl: CACHE_TTLS.realtime,
+  });
+  const meetingsList = meetingsData ?? [];
+
+  // "Next 3 upcoming" comes pre-sliced from the server (future-only, sorted, limit 3)
+  const { data: upcomingData, refresh: refreshUpcoming } = useCachedFetch<PagedResponse<Meeting>>(
+    "meetings:upcoming",
+    () => meetingsApi.listPaged({ from: new Date().toISOString(), limit: 3 }),
+    { ttl: CACHE_TTLS.realtime }
+  );
+  const upcomingMeetings = upcomingData?.data ?? [];
+
+  // Cross-month title search (the calendar only holds one month in memory)
+  const { data: searchData, loading: searchLoading } = useCachedFetch<PagedResponse<Meeting>>(
+    deferredSearch === "" ? null : `meetings:search:${deferredSearch}`,
+    () => meetingsApi.listPaged({ search: deferredSearch, limit: 10 }),
+    { ttl: CACHE_TTLS.realtime }
+  );
+  const searchResults = searchData?.data ?? [];
+  const { data: invitesData, refresh: refreshInvites } = useCachedFetch<MeetingInvite[]>(
+    "meetings:invites",
+    () => meetingsApi.getInvites(),
+    { ttl: CACHE_TTLS.realtime }
+  );
+  const invites = invitesData ?? [];
+  // Reuses the shared users cache (same key as the leads page)
+  const { data: usersData } = useCachedFetch<User[]>(
+    currentUser && (currentUser.role === "ADMIN" || currentUser.role === "MANAGER" || currentUser.role === "TEAM_LEADER")
+      ? "users:active"
+      : null,
+    () => auth.listUsers().then((u) => u.filter((x) => x.isActive)),
+    { ttl: CACHE_TTLS.reference }
+  );
+  const users = usersData ?? [];
   const [calendarStatus, setCalendarStatus] = useState<GoogleCalendarStatus>({
     connected: false,
   });
@@ -51,7 +102,6 @@ export default function MeetingsPage() {
   const [creating, setCreating] = useState(false);
 
   useEffect(() => {
-    loadData();
     checkGoogleStatus();
 
     // Check for Google OAuth callback params
@@ -72,27 +122,16 @@ export default function MeetingsPage() {
 
   const loadData = async () => {
     try {
-      setLoading(true);
-      const [meetingsData, invitesData] = await Promise.all([
-        meetingsApi.list(),
-        meetingsApi.getInvites(),
+      invalidateCache("meetings:");
+      const [meetingsRes, upcomingRes, invitesRes] = await Promise.all([
+        refreshMeetings(),
+        refreshUpcoming(),
+        refreshInvites(),
       ]);
-      setMeetingsList(meetingsData);
-      setInvites(invitesData);
-
-      // Load users separately — this is admin-only and may return 403
-      try {
-        const usersData = await auth.listUsers();
-        setUsers(usersData);
-      } catch {
-        // Non-admin users can't list users — that's fine
-        setUsers([]);
-      }
+      if (!meetingsRes || !upcomingRes || !invitesRes) toast.error("Failed to load meetings");
     } catch (error) {
       console.error("Failed to load data:", error);
       toast.error("Failed to load meetings");
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -199,15 +238,6 @@ export default function MeetingsPage() {
         : [...prev.attendeeIds, userId],
     }));
   };
-
-  // Get upcoming meetings (next 3)
-  const now = new Date();
-  const upcomingMeetings = meetingsList
-    .filter(
-      (meeting) =>
-        new Date(meeting.startTime) > now && meeting.status === "SCHEDULED"
-    )
-    .slice(0, 3);
 
   // Calendar logic
   const year = currentDate.getFullYear();
@@ -410,6 +440,71 @@ export default function MeetingsPage() {
         </Dialog>
       </div>
 
+      {/* Search */}
+      <div className="relative max-w-md">
+        <Input
+          placeholder="Search meetings by title..."
+          value={searchInput}
+          onChange={(e) => setSearchInput(e.target.value)}
+          className="w-full"
+        />
+      </div>
+
+      {/* Search results (span all months — the calendar only holds one) */}
+      {deferredSearch !== "" && (
+        <Card>
+          <CardHeader>
+            <CardTitle>
+              Search results
+              {searchLoading && (
+                <span className="ml-2 text-xs font-normal text-neutral-400">Searching…</span>
+              )}
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {searchResults.length === 0 && !searchLoading ? (
+              <p className="py-4 text-center text-sm text-gray-500">
+                No meetings match “{deferredSearch}”
+              </p>
+            ) : (
+              <div className="space-y-3">
+                {searchResults.map((meeting) => (
+                  <div
+                    key={meeting.id}
+                    className="flex items-start justify-between p-4 border rounded-lg hover:bg-gray-50"
+                  >
+                    <div className="flex-1">
+                      <h3 className="font-semibold">{meeting.title}</h3>
+                      <div className="text-sm text-gray-600 mt-1">
+                        📅 {formatFullDateTime(meeting.startTime)}
+                      </div>
+                      {meeting.location && (
+                        <div className="text-sm text-gray-600">📍 {meeting.location}</div>
+                      )}
+                      <div className="text-xs text-gray-500 mt-1">
+                        Organizer: {meeting.organizer.fullName}
+                      </div>
+                    </div>
+                    {(currentUser?.id === meeting.organizerId ||
+                      currentUser?.role === "ADMIN" ||
+                      currentUser?.role === "MANAGER") && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleDeleteMeeting(meeting.id)}
+                        className="text-red-600 hover:text-red-800 hover:bg-red-50"
+                      >
+                        🗑️
+                      </Button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
       {/* Google Calendar Banner */}
       <Card
         className={
@@ -561,6 +656,9 @@ export default function MeetingsPage() {
               <div className="flex items-center justify-between">
                 <CardTitle>
                   {monthNames[month]} {year}
+                  {meetingsRefreshing && (
+                    <span className="ml-2 text-xs font-normal text-neutral-400">Updating…</span>
+                  )}
                 </CardTitle>
                 <div className="flex gap-2">
                   <Button variant="outline" size="sm" onClick={prevMonth}>

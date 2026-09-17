@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Plus, Search, Trash, Play, Pause, Settings, GitMerge } from "lucide-react";
 import { campaigns as campaignsApi, pipelines as pipelinesApi, workflowsApi, type Campaign, type Pipeline, type Workflow } from "@/lib/api";
+import { CACHE_TTLS, invalidateCache, useCachedFetch } from "@/lib/cached-fetch";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
@@ -13,11 +14,28 @@ export default function WorkflowPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [editingWorkflowId, setEditingWorkflowId] = useState<string | null>(null);
-  const [campaignList, setCampaignList] = useState<Campaign[]>([]);
   const [actionType, setActionType] = useState("move_lead");
-  const [pipelineList, setPipelineList] = useState<Pipeline[]>([]);
-  const [workflows, setWorkflows] = useState<Workflow[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Shared reference-data cache keys — revisits render instantly
+  const { data: campaignListData } = useCachedFetch<Campaign[]>(
+    "campaigns:all",
+    () => campaignsApi.list(),
+    { ttl: CACHE_TTLS.reference }
+  );
+  const { data: pipelineListData } = useCachedFetch<Pipeline[]>(
+    "pipelines:all",
+    () => pipelinesApi.list(),
+    { ttl: CACHE_TTLS.reference }
+  );
+  const { data: workflowsData, refresh: refreshWorkflows } = useCachedFetch<Workflow[]>(
+    "workflows:all",
+    () => workflowsApi.list(),
+    { ttl: CACHE_TTLS.realtime }
+  );
+  const campaignList = campaignListData ?? [];
+  const pipelineList = pipelineListData ?? [];
+  const workflows = workflowsData ?? [];
 
   // Form State
   const [trigger, setTrigger] = useState("call_connected");
@@ -29,14 +47,9 @@ export default function WorkflowPage() {
   const [assignmentOption, setAssignmentOption] = useState("follow_destination");
 
   const loadWorkflows = () => {
-    workflowsApi.list().then(setWorkflows).catch(console.error);
+    invalidateCache("workflows:");
+    refreshWorkflows().catch(console.error);
   };
-
-  useEffect(() => {
-    campaignsApi.list().then(setCampaignList).catch(console.error);
-    pipelinesApi.list().then(setPipelineList).catch(console.error);
-    loadWorkflows();
-  }, []);
 
   const resetForm = () => {
     setEditingWorkflowId(null);

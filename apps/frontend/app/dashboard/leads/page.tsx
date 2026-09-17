@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useDeferredValue, useEffect, useState, useCallback, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -36,7 +36,8 @@ import { Label } from "@/components/ui/label";
 import { AddLeadDialog } from "@/components/add-lead-dialog";
 import { ImportLeadsDialog } from "@/components/import-leads-dialog";
 import { EditLeadDialog } from "@/components/edit-lead-dialog";
-import { leads as leadsApi, campaigns as campaignsApi, auth, type Lead, type Campaign, type LeadType, type Priority, type User } from "@/lib/api";
+import { leads as leadsApi, campaigns as campaignsApi, auth, type Lead, type Campaign, type LeadType, type Priority, type User, type PagedResponse, type LeadStats, type LeadListParams } from "@/lib/api";
+import { CACHE_TTLS, invalidateCache, useCachedFetch } from "@/lib/cached-fetch";
 import { useAuth } from "@/lib/auth-context";
 import { toast } from "sonner";
 
@@ -60,10 +61,12 @@ export default function LeadsPage() {
   const searchParams = useSearchParams();
   const campaignIdFromUrl = searchParams.get("campaignId");
   
-  const [leadsList, setLeadsList] = useState<Lead[]>([]);
-  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
-  const [loading, setLoading] = useState(true);
+  const PAGE_SIZE = 50;
+
   const [searchTerm, setSearchTerm] = useState("");
+  // Debounced server search — avoids a request per keystroke
+  const deferredSearchTerm = useDeferredValue(searchTerm);
+
   const [filterCampaign, setFilterCampaign] = useState<string>(campaignIdFromUrl || "all");
   const [filterLeadType, setFilterLeadType] = useState<string>("all");
   const [filterPriority, setFilterPriority] = useState<string>("all");
@@ -71,11 +74,92 @@ export default function LeadsPage() {
   const [filterEmployee, setFilterEmployee] = useState<string>("all");
   const [customStartDate, setCustomStartDate] = useState<string>("");
   const [customEndDate, setCustomEndDate] = useState<string>("");
+  const [page, setPage] = useState(1);
+
+  // Convert UI filters (incl. date presets) to server query params
+  const serverFilters = useMemo<LeadListParams>(() => {
+    const params: LeadListParams = {};
+    if (filterCampaign !== "all") params.campaignId = filterCampaign;
+    if (filterLeadType !== "all") params.leadType = filterLeadType as Lead["leadType"];
+    if (filterPriority !== "all") params.priority = filterPriority as Priority;
+    if (filterEmployee !== "all") params.assignedToId = filterEmployee;
+    const q = deferredSearchTerm.trim();
+    if (q !== "") params.search = q;
+
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    if (filterDateRange === "today") {
+      params.from = today.toISOString();
+    } else if (filterDateRange === "yesterday") {
+      const yesterday = new Date(today);
+      yesterday.setDate(yesterday.getDate() - 1);
+      params.from = yesterday.toISOString();
+      params.to = today.toISOString();
+    } else if (filterDateRange === "7days") {
+      const d = new Date(today);
+      d.setDate(d.getDate() - 7);
+      params.from = d.toISOString();
+    } else if (filterDateRange === "30days") {
+      const d = new Date(today);
+      d.setDate(d.getDate() - 30);
+      params.from = d.toISOString();
+    } else if (filterDateRange === "thisMonth") {
+      params.from = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+    } else if (filterDateRange === "custom") {
+      if (customStartDate) {
+        const s = new Date(customStartDate);
+        s.setHours(0, 0, 0, 0);
+        params.from = s.toISOString();
+      }
+      if (customEndDate) {
+        const e = new Date(customEndDate);
+        e.setHours(23, 59, 59, 999);
+        params.to = e.toISOString();
+      }
+    }
+    return params;
+  }, [filterCampaign, filterLeadType, filterPriority, filterEmployee, deferredSearchTerm, filterDateRange, customStartDate, customEndDate]);
+
+  // Reset to first page whenever filters change
+  const filterSignature = JSON.stringify(serverFilters);
+  useEffect(() => {
+    setPage(1);
+  }, [filterSignature]);
+
+  const cacheKey = `leads:page:${page}:${filterSignature}`;
+  const {
+    data: pagedLeads,
+    loading,
+    refreshing: leadsRefreshing,
+    refresh: refreshLeads,
+  } = useCachedFetch<PagedResponse<Lead>>(
+    cacheKey,
+    () => leadsApi.listPaged({ ...serverFilters, page, limit: PAGE_SIZE }),
+    { ttl: CACHE_TTLS.realtime }
+  );
+  const leadsList = pagedLeads?.data ?? [];
+  const totalLeads = pagedLeads?.total ?? 0;
+  const totalPages = pagedLeads?.totalPages ?? 1;
+
+  // Summary cards come from the lightweight /stats endpoint, not the table payload
+  const statsKey = `lead-stats:${filterCampaign}`;
+  const { data: statsData } = useCachedFetch<LeadStats>(
+    statsKey,
+    () =>
+      leadsApi.getStats(filterCampaign !== "all" ? { campaignId: filterCampaign } : undefined),
+    { ttl: CACHE_TTLS.realtime }
+  );
+
+  const { data: campaignsData, refresh: refreshCampaigns } = useCachedFetch<Campaign[]>(
+    "campaigns:all",
+    () => campaignsApi.list(),
+    { ttl: CACHE_TTLS.reference }
+  );
+  const campaigns = campaignsData ?? [];
 
   // Bulk assign state
   const [selectedLeadIds, setSelectedLeadIds] = useState<Set<string>>(new Set());
   const [showBulkAssignDialog, setShowBulkAssignDialog] = useState(false);
-  const [teamMembers, setTeamMembers] = useState<User[]>([]);
   const [bulkAssignUserId, setBulkAssignUserId] = useState<string>("");
   const [bulkAssigning, setBulkAssigning] = useState(false);
 
@@ -119,43 +203,28 @@ export default function LeadsPage() {
     });
   };
 
+  const canViewTeam =
+    user?.role === "ADMIN" || user?.role === "MANAGER" || user?.role === "TEAM_LEADER";
+  const { data: teamData } = useCachedFetch<User[]>(
+    canViewTeam ? "users:active" : null,
+    () => auth.listUsers().then((users) => users.filter((u) => u.isActive)),
+    { ttl: CACHE_TTLS.reference, enabled: canViewTeam }
+  );
+  const teamMembers = teamData ?? [];
+
   const fetchLeads = useCallback(async () => {
     try {
-      setLoading(true);
-      const data = await leadsApi.list();
-      setLeadsList(data);
+      invalidateCache("lead-stats");
+      const data = await refreshLeads();
+      if (!data) toast.error("Failed to fetch leads");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to fetch leads");
-    } finally {
-      setLoading(false);
     }
-  }, []);
+  }, [refreshLeads]);
 
   const fetchCampaigns = useCallback(async () => {
-    try {
-      const data = await campaignsApi.list();
-      setCampaigns(data);
-    } catch (error) {
-      console.error("Failed to fetch campaigns:", error);
-    }
-  }, []);
-
-  const fetchTeamMembers = useCallback(async () => {
-    try {
-      const users = await auth.listUsers();
-      setTeamMembers(users.filter((u) => u.isActive));
-    } catch (error) {
-      console.error("Failed to fetch team members:", error);
-    }
-  }, []);
-
-  useEffect(() => {
-    fetchLeads();
-    fetchCampaigns();
-    if (user?.role === "ADMIN" || user?.role === "MANAGER" || user?.role === "TEAM_LEADER") {
-      fetchTeamMembers();
-    }
-  }, [fetchLeads, fetchCampaigns, fetchTeamMembers, user?.role]);
+    await refreshCampaigns();
+  }, [refreshCampaigns]);
 
   useEffect(() => {
     if (campaignIdFromUrl) {
@@ -182,72 +251,17 @@ export default function LeadsPage() {
     }).format(amount);
   };
 
-  // Filter leads
-  const filteredLeads = leadsList.filter((lead) => {
-    const matchesSearch =
-      searchTerm === "" ||
-      lead.firstName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      lead.lastName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      lead.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      lead.mobile?.toLowerCase().includes(searchTerm.toLowerCase());
+  // Rows are already filtered server-side; the current page renders as-is.
+  const filteredLeads = leadsList;
 
-    const matchesCampaign =
-      filterCampaign === "all" || lead.campaignId === filterCampaign;
-
-    const matchesLeadType =
-      filterLeadType === "all" || lead.leadType === filterLeadType;
-
-    const matchesPriority =
-      filterPriority === "all" || lead.priority === filterPriority;
-
-    const matchesEmployee =
-      filterEmployee === "all" || lead.assignedToId === filterEmployee;
-
-    let matchesDate = true;
-    if (filterDateRange !== "all" && lead.createdAt) {
-      const createdDate = new Date(lead.createdAt);
-      const now = new Date();
-      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-      
-      if (filterDateRange === "today") {
-        matchesDate = createdDate >= today;
-      } else if (filterDateRange === "yesterday") {
-        const yesterday = new Date(today);
-        yesterday.setDate(yesterday.getDate() - 1);
-        matchesDate = createdDate >= yesterday && createdDate < today;
-      } else if (filterDateRange === "7days") {
-        const sevenDaysAgo = new Date(today);
-        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-        matchesDate = createdDate >= sevenDaysAgo;
-      } else if (filterDateRange === "30days") {
-        const thirtyDaysAgo = new Date(today);
-        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-        matchesDate = createdDate >= thirtyDaysAgo;
-      } else if (filterDateRange === "thisMonth") {
-        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-        matchesDate = createdDate >= startOfMonth;
-      } else if (filterDateRange === "custom") {
-        if (customStartDate) {
-          const start = new Date(customStartDate);
-          start.setHours(0, 0, 0, 0);
-          if (createdDate < start) matchesDate = false;
-        }
-        if (customEndDate) {
-          const end = new Date(customEndDate);
-          end.setHours(23, 59, 59, 999);
-          if (createdDate > end) matchesDate = false;
-        }
-      }
+  // Stats come from /leads/stats (role-scoped, non-archived)
+  const statsByType = useMemo(() => {
+    const acc = {} as Record<LeadType, number>;
+    for (const item of statsData?.byType ?? []) {
+      acc[item.type as LeadType] = item.count;
     }
-
-    return matchesSearch && matchesCampaign && matchesLeadType && matchesPriority && matchesDate && matchesEmployee;
-  });
-
-  // Calculate stats
-  const statsByType = leadsList.reduce((acc, lead) => {
-    acc[lead.leadType] = (acc[lead.leadType] || 0) + 1;
     return acc;
-  }, {} as Record<LeadType, number>);
+  }, [statsData]);
 
   // Bulk selection helpers
   const [lastSelectedIndex, setLastSelectedIndex] = useState<number | null>(null);
@@ -294,8 +308,7 @@ export default function LeadsPage() {
   const handleOpenBulkAssign = async () => {
     if (teamMembers.length === 0) {
       try {
-        const users = await auth.listUsers();
-        setTeamMembers(users.filter((u) => u.isActive));
+        await auth.listUsers();
       } catch (error) {
         toast.error("Failed to load team members");
         return;
@@ -317,6 +330,8 @@ export default function LeadsPage() {
       setSelectedLeadIds(new Set());
       setShowBulkAssignDialog(false);
       setBulkAssignUserId("");
+      invalidateCache("leads:");
+      invalidateCache("lead-stats");
       fetchLeads();
     } catch (error: any) {
       toast.error(error.message || "Failed to assign leads");
@@ -338,6 +353,8 @@ export default function LeadsPage() {
     setDeleting(true);
     try {
       const result = await leadsApi.delete(deleteTargetId);
+      invalidateCache("leads:");
+      invalidateCache("lead-stats");
       toast.success(result.message || "Lead deleted permanently");
       setSelectedLeadIds((prev) => {
         const next = new Set(prev);
@@ -358,6 +375,8 @@ export default function LeadsPage() {
     setDeleting(true);
     try {
       const result = await leadsApi.bulkDelete(Array.from(selectedLeadIds));
+      invalidateCache("leads:");
+      invalidateCache("lead-stats");
       toast.success(result.message || "Leads deleted permanently");
       setSelectedLeadIds(new Set());
       setShowBulkDeleteDialog(false);
@@ -369,9 +388,24 @@ export default function LeadsPage() {
     }
   };
 
-  const handleExportCSV = () => {
-    if (filteredLeads.length === 0) {
+  const handleExportCSV = async () => {
+    if (totalLeads === 0) {
       toast.error("No leads to export");
+      return;
+    }
+
+    // Fetch all matching leads across pages (100/page to stay light on 0.5 CPU)
+    let exportLeads: Lead[] = [];
+    try {
+      let p = 1;
+      while (exportLeads.length < totalLeads) {
+        const res = await leadsApi.listPaged({ ...serverFilters, page: p, limit: 100 });
+        exportLeads.push(...res.data);
+        if (res.data.length === 0 || exportLeads.length >= res.total) break;
+        p += 1;
+      }
+    } catch {
+      toast.error("Failed to fetch leads for export");
       return;
     }
 
@@ -392,7 +426,7 @@ export default function LeadsPage() {
     const activeCustomFields = Array.from(visibleCustomFields);
     const headers = [...baseHeaders, ...activeCustomFields];
 
-    const rows = filteredLeads.map(lead => {
+    const rows = exportLeads.map(lead => {
       // Normalize name to convert styled math/unicode characters to standard ascii
       const fullName = `${lead.firstName || ""} ${lead.lastName || ""}`.trim().normalize("NFKC");
       
@@ -518,7 +552,7 @@ export default function LeadsPage() {
             <CardTitle className="text-sm font-medium text-neutral-500">Total Leads</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-neutral-900">{leadsList.length}</div>
+            <div className="text-2xl font-bold text-neutral-900">{statsData?.total ?? "—"}</div>
           </CardContent>
         </Card>
         <Card>
@@ -780,7 +814,10 @@ export default function LeadsPage() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle className="text-lg font-medium">
-              All Leads ({filteredLeads.length})
+              All Leads ({totalLeads})
+              {leadsRefreshing && (
+                <span className="ml-2 text-xs font-normal text-neutral-400">Updating…</span>
+              )}
             </CardTitle>
             <Popover>
               <PopoverTrigger asChild>
@@ -1014,6 +1051,37 @@ export default function LeadsPage() {
             </div>
           </CardContent>
         </Card>
+      )}
+
+      {/* Pagination */}
+      {!loading && totalPages > 1 && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-neutral-200 bg-white px-4 py-3">
+          <p className="text-sm text-neutral-500">
+            Showing {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, totalLeads)} of{" "}
+            {totalLeads} leads
+          </p>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={page <= 1}
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+            >
+              ← Prev
+            </Button>
+            <span className="text-sm font-medium text-neutral-700">
+              Page {page} of {totalPages}
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={page >= totalPages}
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+            >
+              Next →
+            </Button>
+          </div>
+        </div>
       )}
 
       {/* Bulk Assign Dialog */}

@@ -7,7 +7,8 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { auth, pipelines, campaigns, integrations } from "@/lib/api";
+import { auth, pipelines, campaigns, integrations, type Campaign, type Pipeline } from "@/lib/api";
+import { CACHE_TTLS, useCachedFetch } from "@/lib/cached-fetch";
 
 const LEAD_FIELDS = [
   { id: "firstName", label: "First Name", required: true },
@@ -23,8 +24,19 @@ const LEAD_FIELDS = [
 export default function GoogleFormsPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [isConnected, setIsConnected] = useState<boolean | null>(null);
-  const [campaignsList, setCampaignsList] = useState<{ id: string; name: string }[]>([]);
-  const [pipelinesList, setPipelinesList] = useState<{ id: string; name: string; stages: any[] }[]>([]);
+  // Shared reference-data cache — revisits render instantly
+  const { data: campaignsData } = useCachedFetch<Campaign[]>(
+    "campaigns:all",
+    () => campaigns.list(),
+    { ttl: CACHE_TTLS.reference }
+  );
+  const { data: pipelinesData } = useCachedFetch<Pipeline[]>(
+    "pipelines:all",
+    () => pipelines.list(),
+    { ttl: CACHE_TTLS.reference }
+  );
+  const campaignsList = (campaignsData ?? []).map(c => ({ id: c.id, name: c.name }));
+  const pipelinesList = (pipelinesData ?? []).map(p => ({ id: p.id, name: p.name, stages: p.stages }));
   const [stagesList, setStagesList] = useState<{ id: string; name: string }[]>([]);
 
   const [config, setConfig] = useState({
@@ -46,13 +58,6 @@ export default function GoogleFormsPage() {
         if (statusData.defaultFormsUrl) {
           setConfig(prev => ({ ...prev, formId: statusData.defaultFormsUrl || "" }));
         }
-
-        const [camps, pipes] = await Promise.all([
-          campaigns.list(),
-          pipelines.list(),
-        ]);
-        setCampaignsList(camps.map(c => ({ id: c.id, name: c.name })));
-        setPipelinesList(pipes.map(p => ({ id: p.id, name: p.name, stages: p.stages })));
       } catch (error) {
         toast.error("Failed to initialize integration page");
       } finally {

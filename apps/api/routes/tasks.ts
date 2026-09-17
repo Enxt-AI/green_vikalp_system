@@ -3,6 +3,7 @@ import type { Request, Response } from "express";
 import prisma from "@db/client";
 import { authenticate } from "../middleware/auth";
 import { createTaskSchema } from "@repo/zod";
+import { parsePagination, wantsPagination } from "../lib/pagination";
 
 const router = Router();
 
@@ -56,10 +57,15 @@ router.get("/follow-ups", authenticate, async (req: Request, res: Response) => {
       ? { assignedToId: userId, isArchived: false } 
       : { isArchived: false };
     
+    const { from, to } = req.query;
+    const followUpRange: any = { not: null };
+    if (from) followUpRange.gte = new Date(from as string);
+    if (to) followUpRange.lte = new Date(to as string);
+
     const leads = await prisma.lead.findMany({
       where: {
         ...where,
-        nextFollowUpAt: { not: null },
+        nextFollowUpAt: followUpRange,
       },
       select: {
         id: true,
@@ -95,9 +101,11 @@ router.get("/follow-ups", authenticate, async (req: Request, res: Response) => {
 router.get("/follow-ups/stats", authenticate, async (req: Request, res: Response) => {
   try {
     const { role, userId } = req.user!;
+    // NOTE: isConverted was dropped from the Lead model (migration
+    // 20260102044627) — filter on isArchived like the sibling route.
     const where = (role !== "ADMIN" && role !== "MANAGER")
-      ? { assignedToId: userId, isConverted: false } 
-      : { isConverted: false };
+      ? { assignedToId: userId, isArchived: false }
+      : { isArchived: false };
     
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -151,31 +159,66 @@ router.get("/follow-ups/stats", authenticate, async (req: Request, res: Response
 router.get("/", authenticate, async (req: Request, res: Response) => {
   try {
     const { role, userId } = req.user!;
-    
+
     // Employees see only their own tasks
     // Admins/Managers see all tasks
-    const where = (role !== "ADMIN" && role !== "MANAGER") ? { assignedToId: userId } : {};
-    
-    const tasks = await prisma.task.findMany({
-      where,
-      include: {
-        lead: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-          },
-        },
-        assignedTo: {
-          select: {
-            id: true,
-            fullName: true,
-          },
+    const where: any = (role !== "ADMIN" && role !== "MANAGER") ? { assignedToId: userId } : {};
+
+    const { search, isCompleted, leadId, from, to } = req.query;
+    if (search && String(search).trim() !== "") {
+      where.title = { contains: String(search).trim(), mode: "insensitive" };
+    }
+    if (isCompleted !== undefined) {
+      where.isCompleted = isCompleted === "true";
+    }
+    if (leadId) {
+      where.leadId = leadId as string;
+    }
+    // Due-date range filter (powers day-scoped fetches like login reminders
+    // without downloading the full task history)
+    if (from || to) {
+      where.dueDate = {};
+      if (from) where.dueDate.gte = new Date(from as string);
+      if (to) where.dueDate.lte = new Date(to as string);
+    }
+
+    const include = {
+      lead: {
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
         },
       },
+      assignedTo: {
+        select: {
+          id: true,
+          fullName: true,
+        },
+      },
+    };
+
+    if (wantsPagination(req.query)) {
+      const { page, limit, skip } = parsePagination(req.query);
+      const [tasks, total] = await Promise.all([
+        prisma.task.findMany({ where, include, orderBy: { dueDate: "asc" }, skip, take: limit }),
+        prisma.task.count({ where }),
+      ]);
+      return res.json({
+        tasks,
+        total,
+        page,
+        limit,
+        totalPages: Math.max(1, Math.ceil(total / limit)),
+      });
+    }
+
+    const tasks = await prisma.task.findMany({
+      where,
+      include,
       orderBy: { dueDate: "asc" },
     });
-    
+
     res.json({ tasks });
   } catch (error) {
     console.error("Get tasks error:", error);

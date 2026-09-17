@@ -1,39 +1,31 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useMemo } from "react";
 import { MobileHeader } from "@/components/mobile/header";
 import { ChevronDown, PhoneCall } from "lucide-react";
 import { tasks as tasksApi, type Task } from "@/lib/api";
+import { CACHE_TTLS, useCachedFetch } from "@/lib/cached-fetch";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 
 export default function FollowUpsPage() {
-  const [followUps, setFollowUps] = useState<any[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  // Shared cache key with the frontend tasks page
+  const { data: allFollowUps, loading: isLoading } = useCachedFetch<any[]>(
+    "tasks:follow-ups",
+    () => tasksApi.followUps.list(),
+    { ttl: CACHE_TTLS.realtime }
+  );
 
-  useEffect(() => {
-    async function fetchFollowUps() {
-      try {
-        const data = await tasksApi.followUps.list();
-        
-        // Filter for today
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        const filtered = data.filter((followUp: any) => {
-          const d = new Date(followUp.nextFollowUpAt);
-          d.setHours(0, 0, 0, 0);
-          return d.getTime() === today.getTime();
-        });
-        
-        setFollowUps(filtered);
-      } catch (error) {
-        console.error("Failed to fetch follow ups", error);
-      } finally {
-        setIsLoading(false);
-      }
-    }
-    fetchFollowUps();
-  }, []);
+  // Filter for today
+  const followUps = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return (allFollowUps ?? []).filter((followUp: any) => {
+      const d = new Date(followUp.nextFollowUpAt);
+      d.setHours(0, 0, 0, 0);
+      return d.getTime() === today.getTime();
+    });
+  }, [allFollowUps]);
 
   return (
     <div className="flex h-screen flex-col bg-brand-50 relative pb-[70px]">

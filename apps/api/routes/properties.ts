@@ -2,6 +2,7 @@ import { Router } from "express";
 import prisma from "@db/client";
 import { authenticate, requireRole } from "../middleware/auth";
 import { createPropertySchema, updatePropertySchema } from "@repo/zod";
+import { parsePagination, paginated, wantsPagination } from "../lib/pagination";
 
 const router = Router();
 
@@ -75,14 +76,21 @@ router.get("/", authenticate, async (req, res) => {
     }
 
     if (search) {
+      // Extended to cover the fields the frontend table filters on, so the
+      // search can move fully server-side.
       where.OR = [
         { address: { contains: search as string, mode: "insensitive" } },
+        { city: { contains: search as string, mode: "insensitive" } },
+        { state: { contains: search as string, mode: "insensitive" } },
+        { zipCode: { contains: search as string, mode: "insensitive" } },
         { description: { contains: search as string, mode: "insensitive" } },
         { mlsNumber: { contains: search as string, mode: "insensitive" } },
       ];
     }
 
-    const properties = await prisma.property.findMany({
+    // Single _count.interests is kept: inventory tables are small and the
+    // table UI renders an Interests column per row.
+    const listQuery = {
       where,
       include: {
         listedBy: {
@@ -95,8 +103,19 @@ router.get("/", authenticate, async (req, res) => {
           select: { interests: true },
         },
       },
-      orderBy: { createdAt: "desc" },
-    });
+      orderBy: { createdAt: "desc" as const },
+    };
+
+    if (wantsPagination(req.query)) {
+      const { page, limit, skip } = parsePagination(req.query);
+      const [properties, total] = await Promise.all([
+        prisma.property.findMany({ ...listQuery, skip, take: limit }),
+        prisma.property.count({ where }),
+      ]);
+      return res.json(paginated(properties, total, page, limit));
+    }
+
+    const properties = await prisma.property.findMany(listQuery);
 
     res.json(properties);
   } catch (error) {

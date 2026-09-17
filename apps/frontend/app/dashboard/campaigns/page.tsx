@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -16,6 +16,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { campaigns as campaignsApi, type Campaign } from "@/lib/api";
+import { CACHE_TTLS, invalidateCache, useCachedFetch } from "@/lib/cached-fetch";
 import { useAuth } from "@/lib/auth-context";
 import { CreateCampaignDialog } from "@/components/create-campaign-dialog";
 import { toast } from "sonner";
@@ -32,24 +33,25 @@ export default function CampaignsPage() {
   const searchParams = useSearchParams();
   const pipelineId = searchParams.get("pipelineId");
   
-  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    loadCampaigns();
-  }, [pipelineId]);
+  const cacheKey = `campaigns:${pipelineId ?? "all"}`;
+  const {
+    data: campaignsData,
+    loading,
+    refreshing,
+    refresh: refreshCampaigns,
+  } = useCachedFetch<Campaign[]>(
+    cacheKey,
+    () =>
+      campaignsApi.list(pipelineId ? { pipelineId } : undefined).catch((error: any) => {
+        toast.error(error.message || "Failed to load campaigns");
+        throw error;
+      }),
+    { ttl: CACHE_TTLS.reference }
+  );
+  const campaigns = campaignsData ?? [];
 
   async function loadCampaigns() {
-    try {
-      setLoading(true);
-      const params = pipelineId ? { pipelineId } : undefined;
-      const data = await campaignsApi.list(params);
-      setCampaigns(data);
-    } catch (error: any) {
-      toast.error(error.message || "Failed to load campaigns");
-    } finally {
-      setLoading(false);
-    }
+    await refreshCampaigns();
   }
 
   const formatCurrency = (amount: number | null) => {
@@ -75,6 +77,7 @@ export default function CampaignsPage() {
     try {
       await campaignsApi.delete(id);
       toast.success("Campaign deleted successfully");
+      invalidateCache("campaigns:");
       loadCampaigns();
     } catch (error: any) {
       toast.error(error.message || "Failed to delete campaign");
@@ -163,7 +166,12 @@ export default function CampaignsPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>All Campaigns</CardTitle>
+          <CardTitle>
+            All Campaigns
+            {refreshing && (
+              <span className="ml-2 text-xs font-normal text-neutral-400">Updating…</span>
+            )}
+          </CardTitle>
         </CardHeader>
         <CardContent>
           {campaigns.length === 0 ? (

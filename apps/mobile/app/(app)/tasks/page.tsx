@@ -1,40 +1,41 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { MobileHeader } from "@/components/mobile/header";
 import { tasks as tasksApi, type Task } from "@/lib/api";
+import { CACHE_TTLS, invalidateCache, useCachedFetch } from "@/lib/cached-fetch";
 import { ClipboardList, CheckCircle2, Clock, Calendar } from "lucide-react";
 import { toast } from "sonner";
 
 export default function TasksPage() {
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-
-  useEffect(() => {
-    async function fetchTasks() {
-      try {
-        const data = await tasksApi.list();
-        setTasks(data);
-      } catch (error) {
-        console.error("Failed to fetch tasks", error);
-      } finally {
-        setIsLoading(false);
-      }
+  const { data: tasksData, loading: isLoading, setData } = useCachedFetch<Task[]>(
+    "tasks:all",
+    () => tasksApi.list(),
+    { ttl: CACHE_TTLS.realtime }
+  );
+  const tasks = tasksData ?? [];
+  const setTasks = (
+    updater: Task[] | ((prev: Task[] | null) => Task[] | null)
+  ) => {
+    if (typeof updater === "function") {
+      const next = updater(tasksData);
+      if (next) setData(next);
+    } else {
+      setData(updater);
     }
-    fetchTasks();
-  }, []);
+  };
 
   const toggleTask = async (task: Task) => {
     try {
       // Optimistic update
-      setTasks(prev => prev.map(t => t.id === task.id ? { ...t, isCompleted: !t.isCompleted } : t));
-      
-await tasksApi.toggleComplete(task.id);
-      
+      setTasks(prev => (prev ?? []).map(t => t.id === task.id ? { ...t, isCompleted: !t.isCompleted } : t));
+
+      await tasksApi.toggleComplete(task.id);
+      invalidateCache("tasks:");
+
       toast.success(task.isCompleted ? "Task uncompleted" : "Task completed");
     } catch (error) {
       // Revert on failure
-      setTasks(prev => prev.map(t => t.id === task.id ? { ...t, isCompleted: task.isCompleted } : t));
+      setTasks(prev => (prev ?? []).map(t => t.id === task.id ? { ...t, isCompleted: task.isCompleted } : t));
       toast.error("Failed to update task");
     }
   };

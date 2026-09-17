@@ -1,30 +1,20 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { MobileHeader } from "@/components/mobile/header";
 import { campaigns as campaignsApi, type Campaign } from "@/lib/api";
+import { CACHE_TTLS, useCachedFetch } from "@/lib/cached-fetch";
 import { Megaphone, Search, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 export default function CampaignsPage() {
   const router = useRouter();
-  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-
-  useEffect(() => {
-    async function fetchCampaigns() {
-      try {
-        const data = await campaignsApi.list();
-        setCampaigns(data);
-      } catch (error) {
-        console.error("Failed to fetch campaigns", error);
-      } finally {
-        setIsLoading(false);
-      }
-    }
-    fetchCampaigns();
-  }, []);
+  const { data: campaignsData, loading: isLoading } = useCachedFetch<Campaign[]>(
+    "campaigns:all",
+    () => campaignsApi.list(),
+    { ttl: CACHE_TTLS.reference }
+  );
+  const campaigns = campaignsData ?? [];
 
   return (
     <div className="flex h-screen flex-col bg-neutral-50/50 relative pb-[70px]">

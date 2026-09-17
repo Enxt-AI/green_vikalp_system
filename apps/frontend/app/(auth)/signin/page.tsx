@@ -99,14 +99,20 @@ export default function SigninPage() {
 
   async function showTodayReminders() {
     try {
-      const [tasksData, followUpsData, meetingsData] = await Promise.all([
-        tasksApi.list(),
-        tasksApi.followUps.list(),
-        meetingsApi.list(),
-      ]);
-
+      // Day-scoped slices — the toast only needs today's counts, so never
+      // download full histories on the login path (0.5 CPU instance).
       const today = new Date();
       today.setHours(0, 0, 0, 0);
+      const tomorrow = new Date(today);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      const from = today.toISOString();
+      const to = tomorrow.toISOString();
+
+      const [tasksData, followUpsData, meetingsData] = await Promise.all([
+        tasksApi.list({ from, to }),
+        tasksApi.followUps.list({ from, to }),
+        meetingsApi.list({ from, to }),
+      ]);
 
       // Filter today's tasks
       const todayTasks = tasksData.filter((task) => {

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { MobileHeader } from "@/components/mobile/header";
 import { leads as leadsApi, interactions as interactionsApi, documents as documentsApi, type Lead } from "@/lib/api";
+import { CACHE_TTLS, invalidateCache, useCachedFetch } from "@/lib/cached-fetch";
 import { useParams, useRouter } from "next/navigation";
 import { Phone, MessageCircle, Mail, MessageSquare, ChevronDown, Paperclip, X } from "lucide-react";
 import { toast } from "sonner";
@@ -11,10 +12,20 @@ import { Button } from "@/components/ui/button";
 export default function LeadDetailsPage() {
   const { id } = useParams();
   const router = useRouter();
-  const [lead, setLead] = useState<Lead | null>(null);
+  const leadId = id as string;
+  const {
+    data: leadData,
+    loading: isLoading,
+    error: leadError,
+    refresh: refreshLead,
+  } = useCachedFetch<Lead>(
+    `lead:${leadId}`,
+    () => leadsApi.get(leadId),
+    { ttl: CACHE_TTLS.realtime }
+  );
+  const lead = leadData ?? null;
   const [activeTab, setActiveTab] = useState<"LEAD_INFO" | "DISPOSE_LEAD" | "OTHER">("LEAD_INFO");
   const [infoTab, setInfoTab] = useState<"ABOUT" | "TIMELINE">("ABOUT");
-  const [isLoading, setIsLoading] = useState(true);
 
   // Swipe gesture state
   const [touchStart, setTouchStart] = useState<number | null>(null);
@@ -150,8 +161,11 @@ export default function LeadDetailsPage() {
       }
 
       // Re-fetch lead to get latest state from background workflow engine
-      const refreshedLead = await leadsApi.get(lead.id);
-      setLead(refreshedLead);
+      invalidateCache(`lead:${lead.id}`);
+      invalidateCache("leads:");
+      invalidateCache("lead-stats");
+      invalidateCache("tasks:");
+      await refreshLead();
 
       toast.success("Lead updated successfully!");
       setDisposeRemark("");
@@ -190,65 +204,55 @@ export default function LeadDetailsPage() {
   // Timer logic
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
 
+  // Prepopulate Dispose Lead state from the cached lead (runs on first load
+  // and after every refresh following a dispose submit)
   useEffect(() => {
-    async function fetchLead() {
-      try {
-        const data = await leadsApi.get(id as string);
-        setLead(data);
+    const data = leadData;
+    if (!data) return;
 
-        // Prepopulate Dispose Lead state from latest CALL interaction
-        if (data.budgetMax) {
-          setDealAmount(data.budgetMax.toString());
-        }
-
-        if (data.nextFollowUpAt) {
-          const dateObj = new Date(data.nextFollowUpAt);
-          const yyyy = dateObj.getFullYear();
-          const mm = String(dateObj.getMonth() + 1).padStart(2, '0');
-          const dd = String(dateObj.getDate()).padStart(2, '0');
-          const hh = String(dateObj.getHours()).padStart(2, '0');
-          const min = String(dateObj.getMinutes()).padStart(2, '0');
-          setDisposeState({
-            date: `${yyyy}-${mm}-${dd}`,
-            time: `${hh}:${min}`
-          });
-        }
-
-        const latestCall = data.interactions?.find((i: any) => i.type === "CALL");
-        if (latestCall) {
-          let remark = latestCall.content || "";
-          
-          // Check if there is an attachment in the remark
-          const attachmentMatch = remark.match(/\n\n\[Attachment: (.*?)\]\((.*?)\)/);
-          if (attachmentMatch) {
-            remark = remark.replace(attachmentMatch[0], "");
-            setPreviousAttachment({ name: attachmentMatch[1], url: attachmentMatch[2] });
-          } else {
-            const fallbackMatch = remark.match(/\n\n\[Attachment: (.*?)\] \(Document ID: (.*?)\)/);
-            if (fallbackMatch) {
-              remark = remark.replace(fallbackMatch[0], "");
-              setPreviousAttachment({ name: fallbackMatch[1], url: "" });
-            }
-          }
-
-          // Clean default remarks
-          if (remark === "Call connected successfully." || remark === "Call was not connected.") {
-            remark = "";
-          }
-
-          setDisposeRemark(remark);
-          setIsConnected(latestCall.subject === "Call - Connected");
-        }
-
-      } catch (error) {
-        toast.error("Failed to fetch lead details");
-        router.back();
-      } finally {
-        setIsLoading(false);
-      }
+    if (data.budgetMax) {
+      setDealAmount(data.budgetMax.toString());
     }
-    fetchLead();
-  }, [id, router]);
+
+    if (data.nextFollowUpAt) {
+      const dateObj = new Date(data.nextFollowUpAt);
+      const yyyy = dateObj.getFullYear();
+      const mm = String(dateObj.getMonth() + 1).padStart(2, '0');
+      const dd = String(dateObj.getDate()).padStart(2, '0');
+      const hh = String(dateObj.getHours()).padStart(2, '0');
+      const min = String(dateObj.getMinutes()).padStart(2, '0');
+      setDisposeState({
+        date: `${yyyy}-${mm}-${dd}`,
+        time: `${hh}:${min}`
+      });
+    }
+
+    const latestCall = data.interactions?.find((i: any) => i.type === "CALL");
+    if (latestCall) {
+      let remark = latestCall.content || "";
+
+      // Check if there is an attachment in the remark
+      const attachmentMatch = remark.match(/\n\n\[Attachment: (.*?)\]\((.*?)\)/);
+      if (attachmentMatch) {
+        remark = remark.replace(attachmentMatch[0], "");
+        setPreviousAttachment({ name: attachmentMatch[1], url: attachmentMatch[2] });
+      } else {
+        const fallbackMatch = remark.match(/\n\n\[Attachment: (.*?)\] \(Document ID: (.*?)\)/);
+        if (fallbackMatch) {
+          remark = remark.replace(fallbackMatch[0], "");
+          setPreviousAttachment({ name: fallbackMatch[1], url: "" });
+        }
+      }
+
+      // Clean default remarks
+      if (remark === "Call connected successfully." || remark === "Call was not connected.") {
+        remark = "";
+      }
+
+      setDisposeRemark(remark);
+      setIsConnected(latestCall.subject === "Call - Connected");
+    }
+  }, [leadData]);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -268,6 +272,18 @@ export default function LeadDetailsPage() {
       window.location.href = `tel:${lead.mobile}`;
     }
   };
+
+  if (leadError && !lead) {
+    return (
+      <div className="flex h-screen flex-col bg-brand-50">
+        <MobileHeader title="Error" />
+        <div className="flex flex-1 flex-col items-center justify-center gap-4 p-6 text-center">
+          <p className="text-lg text-red-600 font-semibold">Failed to load lead details</p>
+          <Button onClick={() => router.back()}>Go Back</Button>
+        </div>
+      </div>
+    );
+  }
 
   if (isLoading || !lead) {
     return (

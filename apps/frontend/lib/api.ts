@@ -509,6 +509,34 @@ export type ManagedDocument = {
 };
 
 // ================================
+// PAGINATION
+// ================================
+
+/** Envelope returned by list endpoints when `page`/`limit` is passed. */
+export type PagedResponse<T> = {
+  data: T[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+};
+
+export type LeadStats = {
+  total: number;
+  byType: { type: string; count: number }[];
+  byStage: { stageId: string; count: number }[];
+  upcomingFollowUps: number;
+};
+
+export type PropertyStats = {
+  total: number;
+  active: number;
+  pending: number;
+  sold: number;
+  averagePrice: number | null;
+};
+
+// ================================
 // AUTH API
 // ================================
 
@@ -775,15 +803,35 @@ export const campaigns = {
 // LEADS API
 // ================================
 
+export type LeadListParams = {
+  campaignId?: string;
+  stageId?: string;
+  assignedToId?: string;
+  leadType?: LeadType;
+  priority?: Priority;
+  isArchived?: boolean;
+  search?: string;
+  from?: string;
+  to?: string;
+  page?: number;
+  limit?: number;
+};
+
 export const leads = {
-  list: (params?: {
-    campaignId?: string;
-    stageId?: string;
-    assignedToId?: string;
-    leadType?: LeadType;
-    isArchived?: boolean;
-  }) =>
+  list: (params?: LeadListParams) =>
     request<Lead[]>(`/leads${params ? "?" + new URLSearchParams(params as any).toString() : ""}`),
+
+  /** Server-paginated list. Always sends page/limit so the API returns a PagedResponse envelope. */
+  listPaged: (params: LeadListParams & { page?: number; limit?: number }) =>
+    request<PagedResponse<Lead>>(
+      `/leads?` +
+        new URLSearchParams({ page: "1", limit: "50", ...(params as any) }).toString()
+    ),
+
+  getStats: (params?: { campaignId?: string }) =>
+    request<LeadStats>(
+      `/leads/stats${params?.campaignId ? `?campaignId=${params.campaignId}` : ""}`
+    ),
 
   get: (id: string) => request<Lead>(`/leads/${id}`),
 
@@ -1050,6 +1098,20 @@ export const properties = {
   }) =>
     request<Property[]>(`/properties${params ? "?" + new URLSearchParams(params as any).toString() : ""}`),
 
+  /** Server-paginated list. Always sends page/limit so the API returns a PagedResponse envelope. */
+  listPaged: (params?: {
+    search?: string;
+    listingStatus?: ListingStatus;
+    page?: number;
+    limit?: number;
+  }) =>
+    request<PagedResponse<Property>>(
+      `/properties?` +
+        new URLSearchParams({ page: "1", limit: "50", ...(params as any) }).toString()
+    ),
+
+  getStats: () => request<PropertyStats>("/properties/stats"),
+
   get: (id: string) => request<Property>(`/properties/${id}`),
 
   getInterests: (id: string, params?: { status?: PropertyInterestStatus }) =>
@@ -1195,7 +1257,13 @@ export const interactions = {
 // ================================
 
 export const tasks = {
-  list: async (params?: { leadId?: string }) => {
+  list: async (params?: {
+    leadId?: string;
+    search?: string;
+    isCompleted?: boolean;
+    from?: string;
+    to?: string;
+  }) => {
     const data = await request<{ tasks: Task[] }>(`/tasks${params ? "?" + new URLSearchParams(params as any).toString() : ""}`);
     return data.tasks;
   },
@@ -1225,8 +1293,10 @@ export const tasks = {
     }),
 
   followUps: {
-    list: async () => {
-      const data = await request<{ followUps: any[] }>("/tasks/follow-ups");
+    list: async (params?: { from?: string; to?: string }) => {
+      const data = await request<{ followUps: any[] }>(
+        `/tasks/follow-ups${params ? "?" + new URLSearchParams(params as any).toString() : ""}`
+      );
       return data.followUps;
     },
     clear: (leadId: string) =>
@@ -1241,9 +1311,38 @@ export const tasks = {
 // ================================
 
 export const meetings = {
-  list: async () => {
-    const data = await request<{ meetings: Meeting[] }>("/meetings");
+  list: async (params?: { search?: string; from?: string; to?: string }) => {
+    const data = await request<{ meetings: Meeting[] }>(
+      `/meetings${params ? "?" + new URLSearchParams(params as any).toString() : ""}`
+    );
     return data.meetings;
+  },
+
+  /** Server-paginated list, normalized to the shared PagedResponse envelope. */
+  listPaged: async (params?: {
+    search?: string;
+    from?: string;
+    to?: string;
+    page?: number;
+    limit?: number;
+  }) => {
+    const data = await request<{
+      meetings: Meeting[];
+      total: number;
+      page: number;
+      limit: number;
+      totalPages: number;
+    }>(
+      `/meetings?` +
+        new URLSearchParams({ page: "1", limit: "50", ...(params as any) }).toString()
+    );
+    return {
+      data: data.meetings,
+      total: data.total,
+      page: data.page,
+      limit: data.limit,
+      totalPages: data.totalPages,
+    } as PagedResponse<Meeting>;
   },
 
   create: (data: {

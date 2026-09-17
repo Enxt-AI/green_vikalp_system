@@ -8,14 +8,23 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 import { auth, integrations } from "@/lib/api";
+import { CACHE_TTLS, useCachedFetch } from "@/lib/cached-fetch";
 
 export default function GoogleDrivePage() {
   const [isLoading, setIsLoading] = useState(false);
   const [isConnected, setIsConnected] = useState<boolean | null>(null);
-  const [folders, setFolders] = useState<{ id: string; name: string }[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedFolder, setSelectedFolder] = useState<string>("");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  // Drive folder listing changes rarely — cache it; connection status stays live
+  const { data: foldersData } = useCachedFetch<{ id: string; name: string }[]>(
+    isConnected ? "drive:folders" : null,
+    () =>
+      integrations.getGoogleDriveFolders().then((driveData) => driveData.folders ?? []),
+    { ttl: CACHE_TTLS.reference, enabled: !!isConnected }
+  );
+  const folders = foldersData ?? [];
 
   useEffect(() => {
     async function init() {
@@ -34,17 +43,6 @@ export default function GoogleDrivePage() {
 
           if (statusData.defaultFolderId) {
             setSelectedFolder(statusData.defaultFolderId);
-          }
-
-          try {
-            const driveData = await integrations.getGoogleDriveFolders();
-            if (driveData.folders) {
-              setFolders(driveData.folders);
-            }
-          } catch (e) {
-            // Folders might fail if API is disabled or scopes missing, despite statusData.connected being true from other checks
-            toast.error("Could not fetch folders. Please verify Google Drive API is enabled and reconnect.");
-            setIsConnected(false);
           }
         }
       } catch (error) {

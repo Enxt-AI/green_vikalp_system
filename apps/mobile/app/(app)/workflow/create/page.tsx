@@ -1,15 +1,27 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { MobileHeader } from "@/components/mobile/header";
 import { ChevronDown } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { campaigns as campaignsApi, pipelines as pipelinesApi, workflowsApi, type Campaign, type Pipeline } from "@/lib/api";
+import { CACHE_TTLS, useCachedFetch } from "@/lib/cached-fetch";
 
 export default function MobileWorkflowCreatePage() {
   const router = useRouter();
-  const [campaignList, setCampaignList] = useState<Campaign[]>([]);
-  const [pipelineList, setPipelineList] = useState<Pipeline[]>([]);
+  // Shared reference-data cache keys
+  const { data: campaignListData } = useCachedFetch<Campaign[]>(
+    "campaigns:all",
+    () => campaignsApi.list(),
+    { ttl: CACHE_TTLS.reference }
+  );
+  const { data: pipelineListData } = useCachedFetch<Pipeline[]>(
+    "pipelines:all",
+    () => pipelinesApi.list(),
+    { ttl: CACHE_TTLS.reference }
+  );
+  const campaignList = campaignListData ?? [];
+  const pipelineList = pipelineListData ?? [];
   const [actionType, setActionType] = useState("move_lead");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -42,11 +54,6 @@ export default function MobileWorkflowCreatePage() {
       setIsSubmitting(false);
     }
   };
-
-  useEffect(() => {
-    campaignsApi.list().then(setCampaignList).catch(console.error);
-    pipelinesApi.list().then(setPipelineList).catch(console.error);
-  }, []);
 
   return (
     <div className="flex h-screen flex-col bg-neutral-50/50 pb-[70px]">
