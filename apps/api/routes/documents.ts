@@ -12,6 +12,8 @@ import {
   deleteFromS3,
 } from "../lib/s3";
 
+const isProd = process.env.NODE_ENV === "production";
+
 const router = Router();
 
 // Configure multer for memory storage
@@ -49,24 +51,8 @@ router.get("/", authenticate, async (req: Request, res: Response) => {
       // Manager/Employee see SHARED documents they have access to:
       // 1. Documents directly shared with them, OR
       // 2. Documents in folders shared with them
-      
-      // First, let's see ALL shared documents to understand what's in the database
-      const allSharedDocs = await prisma.managedDocument.findMany({
-        where: { type: "SHARED" },
-        include: {
-          sharedWithUsers: { select: { id: true, fullName: true } },
-          folder: {
-            select: { 
-              id: true, 
-              name: true, 
-              type: true, 
-              sharedWithUsers: { select: { id: true, fullName: true } },
-            },
-          },
-        },
-      });
-      
-      // Now run the actual query
+      // NOTE: a previous revision fetched ALL shared documents here first and
+      // discarded the result — removed, it doubled DB cost on every load.
       documents = await prisma.managedDocument.findMany({
         where: {
           OR: [
@@ -107,11 +93,6 @@ router.get("/", authenticate, async (req: Request, res: Response) => {
           },
         },
         orderBy: { createdAt: "desc" },
-      });
-      
-      documents.forEach(doc => {
-        const directShared = doc.sharedWithUsers.some(u => u.id === userId);
-        const folderShared = doc.folder?.sharedWithUsers?.some(u => u.id === userId);
       });
     }
 
@@ -262,7 +243,7 @@ router.post(
         return;
       }
 
-      console.log("Uploading file:", req.file.originalname, req.file.size, "bytes");
+      if (!isProd) console.log("Uploading file:", req.file.originalname, req.file.size, "bytes");
 
       // Validate file
       const validation = validateFile(req.file);
@@ -307,10 +288,10 @@ router.post(
 
       // Generate S3 key and upload
       const s3Key = generateS3Key(req.file.originalname);
-      console.log("Attempting S3 upload with key:", s3Key, "MIME type:", req.file.mimetype);
-      
+      if (!isProd) console.log("Attempting S3 upload with key:", s3Key, "MIME type:", req.file.mimetype);
+
       const uploadResult = await uploadToS3(req.file, s3Key);
-      console.log("Upload result:", uploadResult);
+      if (!isProd) console.log("Upload result:", uploadResult);
 
       if (!uploadResult.success) {
         console.error("S3 upload failed:", uploadResult.error);
@@ -318,7 +299,7 @@ router.post(
         return;
       }
 
-      console.log("S3 upload successful, saving to database...");
+      if (!isProd) console.log("S3 upload successful, saving to database...");
 
       // Save document metadata to database
       const document = await prisma.managedDocument.create({

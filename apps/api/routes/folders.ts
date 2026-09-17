@@ -7,6 +7,8 @@ import {
 } from "@repo/zod";
 import { authenticate } from "../middleware/auth";
 
+const isProd = process.env.NODE_ENV === "production";
+
 const router = Router();
 
 // Helper: Check folder depth (max 3 levels)
@@ -221,7 +223,7 @@ router.post("/", authenticate, async (req: Request, res: Response) => {
       },
     });
 
-    console.log(`Folder "${folder.name}" created with ${folder.sharedWithUsers.length} shared users:`,
+    if (!isProd) console.log(`Folder "${folder.name}" created with ${folder.sharedWithUsers.length} shared users:`,
       folder.sharedWithUsers.map(u => u.fullName));
 
     res.status(201).json(folder);

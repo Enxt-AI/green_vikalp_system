@@ -5,6 +5,8 @@ import { authenticate } from "../middleware/auth";
 import { createTaskSchema } from "@repo/zod";
 import { parsePagination, wantsPagination } from "../lib/pagination";
 
+const isProd = process.env.NODE_ENV === "production";
+
 const router = Router();
 
 // ==== FOLLOW-UPS ROUTES (defined first to ensure proper matching) ====
@@ -15,18 +17,18 @@ router.patch("/follow-ups/:leadId", authenticate, async (req: Request, res: Resp
     const { leadId } = req.params;
     const { role, userId } = req.user!;
 
-    console.log("Clear follow-up request:", { leadId, role, userId });
+    if (!isProd) console.log("Clear follow-up request:", { leadId, role, userId });
 
     // Check if lead exists and user has access
     const lead = await prisma.lead.findUnique({ where: { id: leadId } });
     if (!lead) {
-      console.log("Lead not found:", leadId);
+      if (!isProd) console.log("Lead not found:", leadId);
       return res.status(404).json({ error: "Lead not found" });
     }
 
     // Employees can only clear their own leads' follow-ups
     if (role !== "ADMIN" && role !== "MANAGER" && lead.assignedToId !== userId) {
-      console.log("Access denied:", { leadAssignedToId: lead.assignedToId, userId });
+      if (!isProd) console.log("Access denied:", { leadAssignedToId: lead.assignedToId, userId });
       return res.status(403).json({ error: "Forbidden" });
     }
 
@@ -38,7 +40,7 @@ router.patch("/follow-ups/:leadId", authenticate, async (req: Request, res: Resp
       },
     });
 
-    console.log("Follow-up cleared successfully:", updatedLead.id);
+    if (!isProd) console.log("Follow-up cleared successfully:", updatedLead.id);
     res.json({ message: "Follow-up cleared", lead: updatedLead });
   } catch (error) {
     console.error("Clear follow-up error:", error);

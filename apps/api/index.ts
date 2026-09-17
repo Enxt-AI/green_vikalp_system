@@ -1,5 +1,6 @@
 
 import express from "express";
+import compression from "compression";
 import cors from "cors";
 import cookieParser from "cookie-parser";
 import authRouter from "./routes/auth";
@@ -22,6 +23,9 @@ const app = express();
 app.set("trust proxy", 1); // Trust first proxy (Render load balancer)
 
 // Middleware
+// Gzip list payloads (leads/campaigns JSON shrinks ~70-80% — big win for
+// Vercel -> Render hops and Supabase-backed response times on 0.5 CPU)
+app.use(compression());
 app.use(cors({
   origin: (process.env.CORS_ORIGIN || "http://localhost:3000").split(","),
   credentials: true, // Allow cookies

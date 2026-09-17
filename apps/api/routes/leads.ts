@@ -273,116 +273,152 @@ router.get("/:id", authenticate, async (req, res) => {
     const userId = (req as any).user.userId;
     const userRole = (req as any).user.role;
 
-    const lead = await prisma.lead.findUnique({
-      where: { id },
-      include: {
-        campaign: {
-          include: {
-            pipeline: {
-              include: {
-                stages: {
-                  orderBy: { order: "asc" },
-                },
-              },
-            },
-          },
-        },
-        currentStage: true,
-        assignedTo: {
-          select: {
-            id: true,
-            fullName: true,
-            email: true,
-          },
-        },
-        interactions: {
-          where: userRole !== "ADMIN" ? { createdById: userId } : undefined,
-          include: {
-            createdBy: {
-              select: {
-                id: true,
-                fullName: true,
-              },
-            },
-          },
-          orderBy: { occurredAt: "desc" },
-          take: 50,
-        },
-        properties: {
-          include: {
-            property: {
-              include: {
-                listedBy: {
-                  select: {
-                    id: true,
-                    fullName: true,
-                  },
-                },
-              },
-            },
-          },
-          orderBy: { createdAt: "desc" },
-        },
-        tasks: {
-          include: {
-            assignedTo: {
-              select: {
-                id: true,
-                fullName: true,
-              },
-            },
-          },
-          orderBy: { dueDate: "asc" },
-        },
-        meetings: {
-          include: {
-            organizer: {
-              select: {
-                id: true,
-                fullName: true,
-              },
-            },
-            attendees: {
-              include: {
-                user: {
-                  select: {
-                    id: true,
-                    fullName: true,
-                  },
-                },
-              },
-            },
-          },
-          orderBy: { startTime: "asc" },
-        },
-        notes: {
-          include: {
-            author: {
-              select: {
-                id: true,
-                fullName: true,
-              },
-            },
-          },
-          orderBy: { createdAt: "desc" },
-        },
-        documents: {
-          orderBy: { uploadedAt: "desc" },
-        },
-      },
-    });
+    // NOTE: every query to Supabase costs ~1.5s+ from a cold/high-RTT link
+    // and Prisma nested `include` chains them SEQUENTIALLY (measured 9.7s
+    // for this endpoint). This handler therefore runs in three parallel
+    // windows: (1) bare lead row, (2) everything addressable by its FKs in
+    // one Promise.all batch, (3) pipeline + stages. Same response shape.
+    const lead = await prisma.lead.findUnique({ where: { id } });
 
     if (!lead) {
       return res.status(404).json({ error: "Lead not found" });
     }
 
-    // Check access
-    const hasAccess = await canAccessCampaign(lead.campaignId, userId, userRole);
+    const [
+      campaign,
+      currentStage,
+      assignedTo,
+      interactions,
+      properties,
+      tasks,
+      meetings,
+      notes,
+      documents,
+    ] = await Promise.all([
+      prisma.campaign.findUnique({ where: { id: lead.campaignId } }),
+      prisma.pipelineStage.findUnique({ where: { id: lead.currentStageId } }),
+      prisma.user.findUnique({
+        where: { id: lead.assignedToId },
+        select: { id: true, fullName: true, email: true },
+      }),
+      prisma.interaction.findMany({
+        where: {
+          leadId: id,
+          ...(userRole !== "ADMIN" ? { createdById: userId } : {}),
+        },
+        include: {
+          createdBy: {
+            select: {
+              id: true,
+              fullName: true,
+            },
+          },
+        },
+        orderBy: { occurredAt: "desc" },
+        take: 50,
+      }),
+      prisma.propertyInterest.findMany({
+        where: { leadId: id },
+        include: {
+          property: {
+            include: {
+              listedBy: {
+                select: {
+                  id: true,
+                  fullName: true,
+                },
+              },
+            },
+          },
+        },
+        orderBy: { createdAt: "desc" },
+      }),
+      prisma.task.findMany({
+        where: { leadId: id },
+        include: {
+          assignedTo: {
+            select: {
+              id: true,
+              fullName: true,
+            },
+          },
+        },
+        orderBy: { dueDate: "asc" },
+      }),
+      prisma.meeting.findMany({
+        where: { leadId: id },
+        include: {
+          organizer: {
+            select: {
+              id: true,
+              fullName: true,
+            },
+          },
+          attendees: {
+            include: {
+              user: {
+                select: {
+                  id: true,
+                  fullName: true,
+                },
+              },
+            },
+          },
+        },
+        orderBy: { startTime: "asc" },
+      }),
+      prisma.note.findMany({
+        where: { leadId: id },
+        include: {
+          author: {
+            select: {
+              id: true,
+              fullName: true,
+            },
+          },
+        },
+        orderBy: { createdAt: "desc" },
+      }),
+      prisma.document.findMany({
+        where: { leadId: id },
+        orderBy: { uploadedAt: "desc" },
+      }),
+    ]);
+
+    if (!campaign) {
+      return res.status(404).json({ error: "Lead not found" });
+    }
+
+    // Check access — campaign.assignedToIds is already loaded above, so this
+    // needs zero extra queries (equivalent to canAccessCampaign).
+    const hasAccess =
+      userRole === "ADMIN" ||
+      userRole === "MANAGER" ||
+      campaign.assignedToIds.includes(userId);
     if (!hasAccess && lead.assignedToId !== userId) {
       return res.status(403).json({ error: "Access denied" });
     }
 
-    res.json(lead);
+    const [pipeline, stages] = await Promise.all([
+      prisma.pipeline.findUnique({ where: { id: campaign.pipelineId } }),
+      prisma.pipelineStage.findMany({
+        where: { pipelineId: campaign.pipelineId },
+        orderBy: { order: "asc" },
+      }),
+    ]);
+
+    res.json({
+      ...lead,
+      campaign: { ...campaign, pipeline: { ...pipeline, stages } },
+      currentStage,
+      assignedTo,
+      interactions,
+      properties,
+      tasks,
+      meetings,
+      notes,
+      documents,
+    });
   } catch (error) {
     console.error("Error fetching lead:", error);
     res.status(500).json({ error: "Failed to fetch lead" });

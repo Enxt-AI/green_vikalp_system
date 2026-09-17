@@ -395,31 +395,35 @@ router.get("/users", authenticate, requireAdmin, async (_req: Request, res: Resp
       orderBy: { createdAt: "desc" },
     });
 
-    const usersWithStats = await Promise.all(
-      users.map(async (user) => {
-        const [totalCalls, connectedCalls] = await Promise.all([
-          prisma.interaction.count({
-            where: { createdById: user.id, type: "CALL" },
-          }),
-          prisma.interaction.count({
-            where: { 
-              createdById: user.id, 
-              type: "CALL", 
-              duration: { gt: 0 } 
-            },
-          }),
-        ]);
+    // Two grouped aggregates instead of 2 count queries per user (was N+1:
+    // this endpoint also backs the leads-page team dropdowns).
+    const [totalByUser, connectedByUser] = await Promise.all([
+      prisma.interaction.groupBy({
+        by: ["createdById"],
+        where: { type: "CALL" },
+        _count: true,
+      }),
+      prisma.interaction.groupBy({
+        by: ["createdById"],
+        where: { type: "CALL", duration: { gt: 0 } },
+        _count: true,
+      }),
+    ]);
+    const totalMap = new Map(totalByUser.map((r) => [r.createdById, r._count]));
+    const connectedMap = new Map(connectedByUser.map((r) => [r.createdById, r._count]));
 
-        return {
-          ...user,
-          stats: {
-            totalCalls,
-            connectedCalls,
-            unconnectedCalls: totalCalls - connectedCalls,
-          },
-        };
-      })
-    );
+    const usersWithStats = users.map((user) => {
+      const totalCalls = totalMap.get(user.id) ?? 0;
+      const connectedCalls = connectedMap.get(user.id) ?? 0;
+      return {
+        ...user,
+        stats: {
+          totalCalls,
+          connectedCalls,
+          unconnectedCalls: totalCalls - connectedCalls,
+        },
+      };
+    });
 
     res.json({ users: usersWithStats });
   } catch (error) {
@@ -571,7 +575,7 @@ router.get("/google/callback", async (req: Request, res: Response) => {
     // Sync all accepted upcoming meetings to user's calendar
     try {
       const syncedCount = await syncAcceptedMeetingsToCalendar(userId);
-      console.log(`Synced ${syncedCount} accepted meetings to user's calendar`);
+      if (process.env.NODE_ENV !== "production") console.log(`Synced ${syncedCount} accepted meetings to user's calendar`);
     } catch (syncError) {
       console.error("Failed to sync accepted meetings:", syncError);
       // Don't fail the OAuth flow if sync fails

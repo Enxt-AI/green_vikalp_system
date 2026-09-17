@@ -14,10 +14,18 @@ if (process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) {
 }
 
 export function startNotifierCron() {
-  console.log("Starting Web Push Notifier Cron Job...");
+  // Disabled by default on small instances — the per-minute heavy findMany
+  // (task + lead + subscriptions includes) steals CPU/pool from live traffic
+  // on 0.5 CPU boxes. Set ENABLE_PUSH_CRON=true to run it every 15 minutes.
+  if (process.env.ENABLE_PUSH_CRON !== "true") {
+    console.log("Push notifier cron disabled (set ENABLE_PUSH_CRON=true to enable).");
+    return;
+  }
+  console.log("Starting Web Push Notifier Cron Job (every 15 minutes)...");
 
-  // Run every minute
-  cron.schedule("* * * * *", async () => {
+  // Run every 15 minutes — push reminders don't need minute precision, and
+  // the query window below already covers the next 15 minutes of due tasks.
+  cron.schedule("*/15 * * * *", async () => {
     try {
       const now = new Date();
       // Look for tasks due within the next 15 minutes that haven't been notified yet
