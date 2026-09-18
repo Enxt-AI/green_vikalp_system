@@ -6,9 +6,11 @@ interface MobileHeaderProps {
   title: string;
   showBack?: boolean;
   rightActions?: React.ReactNode;
+  onFilterClick?: () => void;
+  filterActive?: boolean;
 }
 
-export function MobileHeader({ title, showBack = true, rightActions }: MobileHeaderProps) {
+export function MobileHeader({ title, showBack = true, rightActions, onFilterClick, filterActive }: MobileHeaderProps) {
   const router = useRouter();
 
   return (
@@ -31,8 +33,14 @@ export function MobileHeader({ title, showBack = true, rightActions }: MobileHea
           ) : (
             <>
               <PushNotificationToggle />
-              <button className="rounded-full p-2 hover:bg-neutral-100 text-neutral-600 transition-colors active:scale-95">
+              <button
+                onClick={onFilterClick}
+                className="relative rounded-full p-2 hover:bg-neutral-100 text-neutral-600 transition-colors active:scale-95"
+              >
                 <Filter className="h-5 w-5" />
+                {filterActive && (
+                  <span className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-blue-500 ring-2 ring-white" />
+                )}
               </button>
             </>
           )}
