@@ -632,12 +632,12 @@ export default function LeadListPage() {
       </div>
 
       {/* Sticky Bottom Action */}
-      <div className="absolute bottom-[80px] left-5 right-5 z-20">
+      {/* <div className="absolute bottom-[80px] left-5 right-5 z-20">
         <Button className="w-full h-14 rounded-xl bg-green-600 hover:bg-green-700 text-white shadow-[0_0_20px_rgba(0,0,0,0.2)] text-base font-semibold flex items-center gap-2 transition-transform active:scale-95">
           <Phone className="h-5 w-5 fill-white" />
           Start Calling
         </Button>
-      </div>
+      </div> */}
     </div>
   );
 }
