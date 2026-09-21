@@ -7,7 +7,6 @@ import { authenticate } from "../middleware/auth";
 import { readSheetData } from "../lib/google-sheets";
 import { getFormQuestions, getFormResponses } from "../lib/google-forms";
 import { getDriveFolders } from "../lib/google-drive";
-import { uploadToS3, generateS3Key } from "../lib/s3";
 import { getAutoAssignmentOrder, assignLeadsRoundRobin } from "../lib/auto-assign";
 
 interface SyncRequest {
@@ -787,13 +786,9 @@ router.post("/upload-excel", authenticate, upload.single("file"), async (req: Re
       return;
     }
 
-    const s3Key = generateS3Key(file.originalname, "leads-imports");
-    const uploadResult = await uploadToS3(file, s3Key);
-    if (!uploadResult.success) {
-      res.status(500).json({ error: `Failed to upload file to S3: ${uploadResult.error}` });
-      return;
-    }
-
+    // The spreadsheet is parsed directly from the in-memory buffer — no
+    // object storage involved (previously archived to S3, but the key was
+    // never referenced again).
     const workbook = xlsx.read(file.buffer, { type: "buffer" });
     const firstSheetName = workbook.SheetNames[0];
     const worksheet = workbook.Sheets[firstSheetName];

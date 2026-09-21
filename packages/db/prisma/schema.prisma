@@ -388,7 +388,10 @@ model Folder {
 model ManagedDocument {
   id              String       @id @default(uuid())
   name            String
-  s3Key           String       @unique
+  // Legacy S3 object key. Null for files stored directly in Postgres.
+  s3Key           String?      @unique
+  // File bytes stored in Postgres (bytea). Preferred for new uploads.
+  data            Bytes?
   fileType        String
   fileSize        Int
   type            DocumentType @default(SHARED)

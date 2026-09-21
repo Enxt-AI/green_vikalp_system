@@ -6,8 +6,6 @@ import { authenticate } from "../middleware/auth";
 import multer from "multer";
 import {
   validateFile,
-  generateS3Key,
-  uploadToS3,
   getPresignedViewUrl,
   deleteFromS3,
 } from "../lib/s3";
@@ -24,6 +22,28 @@ const upload = multer({
   },
 });
 
+// Shared access check: owner + admins always pass; others need a SHARED
+// document shared directly or via a shared folder.
+async function canAccessDocument(
+  document: { uploadedById: string; type: string; sharedWithUsers: { id: string }[]; folder: { id: string; type: string } | null },
+  userId: string,
+  role: string
+): Promise<boolean> {
+  if (role === "ADMIN" || document.uploadedById === userId) return true;
+  if (document.type === "PERSONAL") return false;
+  if (document.sharedWithUsers.some((u) => u.id === userId)) return true;
+  if (document.folder && document.folder.type === "SHARED") {
+    const shared = await prisma.folder.findFirst({
+      where: {
+        id: document.folder.id,
+        sharedWithUsers: { some: { id: userId } },
+      },
+    });
+    if (shared) return true;
+  }
+  return false;
+}
+
 // GET /documents - List all documents (role-based)
 router.get("/", authenticate, async (req: Request, res: Response) => {
   try {
@@ -34,6 +54,7 @@ router.get("/", authenticate, async (req: Request, res: Response) => {
     if (role === "ADMIN") {
       // Admin sees all documents
       documents = await prisma.managedDocument.findMany({
+        omit: { data: true },
         include: {
           uploadedBy: {
             select: { id: true, fullName: true, username: true },
@@ -54,6 +75,7 @@ router.get("/", authenticate, async (req: Request, res: Response) => {
       // NOTE: a previous revision fetched ALL shared documents here first and
       // discarded the result — removed, it doubled DB cost on every load.
       documents = await prisma.managedDocument.findMany({
+        omit: { data: true },
         where: {
           OR: [
             {
@@ -111,6 +133,7 @@ router.get("/:id", authenticate, async (req: Request, res: Response) => {
 
     const document = await prisma.managedDocument.findUnique({
       where: { id },
+      omit: { data: true },
       include: {
         uploadedBy: {
           select: { id: true, fullName: true, username: true },
@@ -165,8 +188,10 @@ router.get("/:id", authenticate, async (req: Request, res: Response) => {
   }
 });
 
-// GET /documents/:id/view - Get presigned URL for viewing
-router.get("/:id/view", authenticate, async (req: Request, res: Response) => {
+// GET /documents/:id/file - Stream file bytes (Postgres) or redirect to
+// legacy S3 presigned URL. Same permission checks as /view. Clients open the
+// durable `/documents/:id/file` path returned by /view for DB-stored files.
+router.get("/:id/file", authenticate, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const { userId, role } = req.user!;
@@ -188,30 +213,80 @@ router.get("/:id/view", authenticate, async (req: Request, res: Response) => {
       return;
     }
 
-    // Check access permissions
-    if (role !== "ADMIN" && document.uploadedById !== userId) {
-      if (document.type === "PERSONAL") {
-        res.status(403).json({ error: "Access denied" });
-        return;
-      }
+    if (!(await canAccessDocument(document, userId, role))) {
+      res.status(403).json({ error: "Access denied" });
+      return;
+    }
 
-      // Check if user has access via direct sharing OR folder sharing
-      const hasDirectAccess = document.sharedWithUsers.some((u: any) => u.id === userId);
-      const hasFolderAccess = document.folder && 
-        document.folder.type === "SHARED" &&
-        await prisma.folder.findFirst({
-          where: {
-            id: document.folder.id,
-            sharedWithUsers: {
-              some: { id: userId },
-            },
-          },
-        });
-      
-      if (!hasDirectAccess && !hasFolderAccess) {
-        res.status(403).json({ error: "Access denied" });
-        return;
-      }
+    if (document.data) {
+      const bytes = Buffer.from(document.data);
+      res.setHeader("Content-Type", document.fileType || "application/octet-stream");
+      res.setHeader("Content-Length", String(bytes.length));
+      res.setHeader(
+        "Content-Disposition",
+        `inline; filename="${document.name.replace(/"/g, "")}"`
+      );
+      res.setHeader("Cache-Control", "private, max-age=3600");
+      res.send(bytes);
+      return;
+    }
+
+    if (document.s3Key) {
+      const url = await getPresignedViewUrl(document.s3Key, 3600);
+      res.redirect(url);
+      return;
+    }
+
+    res.status(404).json({ error: "File content not found" });
+  } catch (error) {
+    console.error("Error serving document file:", error);
+    res.status(500).json({ error: "Failed to serve document" });
+  }
+});
+
+// GET /documents/:id/view - Get view URL for a document.
+// DB-stored files return a durable app-hosted path (no expiry);
+// legacy S3 files return a presigned URL (expires in 1 hour).
+router.get("/:id/view", authenticate, async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { userId, role } = req.user!;
+
+    const document = await prisma.managedDocument.findUnique({
+      where: { id },
+      omit: { data: true },
+      include: {
+        sharedWithUsers: {
+          select: { id: true },
+        },
+        folder: {
+          select: { id: true, type: true },
+        },
+      },
+    });
+
+    if (!document) {
+      res.status(404).json({ error: "Document not found" });
+      return;
+    }
+
+    if (!(await canAccessDocument(document, userId, role))) {
+      res.status(403).json({ error: "Access denied" });
+      return;
+    }
+
+    // Files stored in Postgres get a durable app-hosted URL (served by
+    // GET /documents/:id/file, no expiry). Legacy S3 files fall back to a
+    // presigned URL (expires in 1 hour).
+    if (!document.s3Key) {
+      res.json({
+        url: `/documents/${document.id}/file`,
+        fileName: document.name,
+        fileType: document.fileType,
+        expiresIn: null,
+        storage: "database",
+      });
+      return;
     }
 
     // Generate presigned URL (expires in 1 hour)
@@ -222,6 +297,7 @@ router.get("/:id/view", authenticate, async (req: Request, res: Response) => {
       fileName: document.name,
       fileType: document.fileType,
       expiresIn: 3600,
+      storage: "s3",
     });
   } catch (error) {
     console.error("Error generating view URL:", error);
@@ -286,26 +362,15 @@ router.post(
         }
       }
 
-      // Generate S3 key and upload
-      const s3Key = generateS3Key(req.file.originalname);
-      if (!isProd) console.log("Attempting S3 upload with key:", s3Key, "MIME type:", req.file.mimetype);
+      if (!isProd) console.log("Storing file in Postgres:", req.file.originalname, req.file.size, "bytes");
 
-      const uploadResult = await uploadToS3(req.file, s3Key);
-      if (!isProd) console.log("Upload result:", uploadResult);
-
-      if (!uploadResult.success) {
-        console.error("S3 upload failed:", uploadResult.error);
-        res.status(500).json({ error: uploadResult.error || "Failed to upload to S3" });
-        return;
-      }
-
-      if (!isProd) console.log("S3 upload successful, saving to database...");
-
-      // Save document metadata to database
+      // Save file bytes directly in Postgres (bytea) instead of S3.
+      // s3Key stays null; file content is served via GET /documents/:id/file.
       const document = await prisma.managedDocument.create({
         data: {
           name,
-          s3Key,
+          s3Key: null,
+          data: req.file.buffer,
           fileType: req.file.mimetype,
           fileSize: req.file.size,
           type,
@@ -317,6 +382,7 @@ router.post(
               }
             : undefined,
         },
+        omit: { data: true },
         include: {
           uploadedBy: {
             select: { id: true, fullName: true, username: true },
@@ -406,9 +472,10 @@ router.delete("/:id", authenticate, async (req: Request, res: Response) => {
       return;
     }
 
-    // Get document details
+    // Get document details (bytes excluded)
     const document = await prisma.managedDocument.findUnique({
       where: { id },
+      select: { id: true, name: true, s3Key: true },
     });
 
     if (!document) {
@@ -416,11 +483,13 @@ router.delete("/:id", authenticate, async (req: Request, res: Response) => {
       return;
     }
 
-    // Delete from S3
-    const s3DeleteResult = await deleteFromS3(document.s3Key);
-    if (!s3DeleteResult.success) {
-      console.error("S3 deletion failed:", s3DeleteResult.error);
-      // Continue with database deletion even if S3 fails
+    // Legacy S3 files: remove the object too. DB-stored files die with the row.
+    if (document.s3Key) {
+      const s3DeleteResult = await deleteFromS3(document.s3Key);
+      if (!s3DeleteResult.success) {
+        console.error("S3 deletion failed:", s3DeleteResult.error);
+        // Continue with database deletion even if S3 fails
+      }
     }
 
     // Delete from database

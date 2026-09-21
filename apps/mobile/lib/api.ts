@@ -496,7 +496,7 @@ export type Folder = {
 export type ManagedDocument = {
   id: string;
   name: string;
-  s3Key: string;
+  s3Key: string | null;
   fileType: string;
   fileSize: number;
   type: "SHARED" | "PERSONAL";
@@ -1375,10 +1375,19 @@ export const documents = {
 
   get: (id: string) => request<ManagedDocument>(`/documents/${id}`),
 
-  getViewUrl: (id: string) =>
-    request<{ url: string; fileName: string; fileType: string; expiresIn: number }>(
-      `/documents/${id}/view`
-    ),
+  getViewUrl: async (id: string) => {
+    const data = await request<{
+      url: string;
+      fileName: string;
+      fileType: string;
+      expiresIn: number | null;
+      storage?: "database" | "s3";
+    }>(`/documents/${id}/view`);
+    // DB-stored files return an app-relative path; prefix with this app's
+    // API base (/api/proxy in production) so it resolves to the API.
+    if (data.url.startsWith("/")) data.url = `${API_BASE_URL}${data.url}`;
+    return data;
+  },
 
   upload: async (data: {
     file: File;
