@@ -58,7 +58,7 @@ router.get("/", authenticate, async (req, res) => {
     const userId = (req as any).user.userId;
     const userRole = (req as any).user.role;
     if (!isProd) console.log("Fetching leads for user:", userId, "with role:", userRole);
-    const { campaignId, stageId, assignedToId, leadType, isArchived, search, priority, from, to } = req.query;
+    const { campaignId, stageId, assignedToId, leadType, isArchived, search, priority, from, to, withFiles } = req.query;
 
     const where: any = {};
     const employeeRoles = ["EMPLOYEE", "TELE_CALLER", "FIELD_EXECUTIVE", "TEAM_LEADER"];
@@ -172,16 +172,31 @@ router.get("/", authenticate, async (req, res) => {
         },
         // Latest dispose CALL remark (mobile Dispose Lead tab stores the
         // remark as the CALL interaction content). take:1 keeps this cheap.
+        // CSV export passes ?withFiles=true to also get lead documents and
+        // a deeper CALL history so attachment links can be extracted.
         interactions: {
           where: { type: "CALL" },
           orderBy: { occurredAt: "desc" },
-          take: 1,
+          take: withFiles === "true" ? 20 : 1,
           select: {
             content: true,
             subject: true,
             occurredAt: true,
           },
         },
+        ...(withFiles === "true"
+          ? {
+              documents: {
+                select: {
+                  name: true,
+                  url: true,
+                  fileType: true,
+                  uploadedAt: true,
+                },
+                orderBy: { uploadedAt: "desc" as const },
+              },
+            }
+          : {}),
       },
       orderBy: { createdAt: "desc" as const },
     };

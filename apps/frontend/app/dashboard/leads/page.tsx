@@ -395,12 +395,14 @@ export default function LeadsPage() {
       return;
     }
 
-    // Fetch all matching leads across pages (100/page to stay light on 0.5 CPU)
+    // Fetch all matching leads across pages (100/page to stay light on 0.5 CPU).
+    // withFiles=true pulls lead documents + deeper CALL history for the
+    // Uploaded Files column; the table view stays light without it.
     let exportLeads: Lead[] = [];
     try {
       let p = 1;
       while (exportLeads.length < totalLeads) {
-        const res = await leadsApi.listPaged({ ...serverFilters, page: p, limit: 100 });
+        const res = await leadsApi.listPaged({ ...serverFilters, page: p, limit: 100, withFiles: "true" });
         exportLeads.push(...res.data);
         if (res.data.length === 0 || exportLeads.length >= res.total) break;
         p += 1;
@@ -422,6 +424,7 @@ export default function LeadsPage() {
       "Budget Max",
       "Assigned To",
       "Remark",
+      "Uploaded Files",
       "Created At"
     ];
 
@@ -447,6 +450,35 @@ export default function LeadsPage() {
           ? ""
           : cleanRemark.normalize("NFKC").replace(/[\r\n]+/g, " ").trim();
 
+      // Uploaded files per lead from two sources:
+      // 1. Mobile dispose attachments embedded in CALL remark markdown:
+      //    [Attachment: name](url) or [Attachment: name] (Document ID: id)
+      // 2. Lead-linked documents (POST /leads/:id/documents).
+      const fileEntries: string[] = [];
+      const seenFiles = new Set<string>();
+      const pushFile = (name: string, ref: string) => {
+        const label = ref ? `${name} (${ref})` : name;
+        if (!seenFiles.has(label)) {
+          seenFiles.add(label);
+          fileEntries.push(label);
+        }
+      };
+      for (const interaction of lead.interactions ?? []) {
+        const content = interaction.content || "";
+        const linkMatches = content.matchAll(/\[Attachment:\s*(.*?)\]\((.*?)\)/g);
+        for (const m of linkMatches) {
+          pushFile(m[1].trim().normalize("NFKC"), m[2].trim());
+        }
+        const idMatches = content.matchAll(/\[Attachment:\s*(.*?)\]\s*\(Document ID:\s*(.*?)\)/g);
+        for (const m of idMatches) {
+          pushFile(m[1].trim().normalize("NFKC"), `Document ID: ${m[2].trim()}`);
+        }
+      }
+      for (const doc of lead.documents ?? []) {
+        pushFile(doc.name.normalize("NFKC"), doc.url || "");
+      }
+      const uploadedFiles = fileEntries.join(" | ");
+
       const rowData = [
         fullName,
         lead.email || "",
@@ -459,6 +491,7 @@ export default function LeadsPage() {
         lead.budgetMax || "",
         lead.assignedTo?.fullName || "",
         remark,
+        uploadedFiles,
         new Date(lead.createdAt).toLocaleDateString()
       ];
 

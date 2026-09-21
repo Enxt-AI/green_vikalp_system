@@ -277,6 +277,14 @@ export type Lead = {
     subject: string | null;
     occurredAt: string;
   }>;
+  // Per-lead uploaded files (populated when GET /leads is called with
+  // ?withFiles=true, used by CSV export).
+  documents?: Array<{
+    name: string;
+    url: string;
+    fileType: string;
+    uploadedAt: string;
+  }>;
   createdAt: string;
   updatedAt: string;
 };
@@ -821,6 +829,8 @@ export type LeadListParams = {
   to?: string;
   page?: number;
   limit?: number;
+  /** "true" to include lead documents + deeper CALL history (CSV export). */
+  withFiles?: string;
 };
 
 export const leads = {
