@@ -1384,8 +1384,14 @@ export const documents = {
       storage?: "database" | "s3";
     }>(`/documents/${id}/view`);
     // DB-stored files return an app-relative path; prefix with this app's
-    // API base (/api/proxy in production) so it resolves to the API.
-    if (data.url.startsWith("/")) data.url = `${API_BASE_URL}${data.url}`;
+    // API base (/api/proxy in production) so it resolves to the API, then
+    // make it absolute so links embedded in dispose remarks (and opened
+    // from anywhere, e.g. CSV exports) work as standalone view links.
+    if (data.url.startsWith("/")) {
+      const appPath = `${API_BASE_URL}${data.url}`;
+      data.url =
+        typeof window !== "undefined" ? `${window.location.origin}${appPath}` : appPath;
+    }
     return data;
   },
 

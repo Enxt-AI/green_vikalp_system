@@ -454,10 +454,24 @@ export default function LeadsPage() {
       // 1. Mobile dispose attachments embedded in CALL remark markdown:
       //    [Attachment: name](url) or [Attachment: name] (Document ID: id)
       // 2. Lead-linked documents (POST /leads/:id/documents).
+      // Relative refs (e.g. /api/proxy/documents/.../file embedded before
+      // links were absolutized) are expanded against the dashboard origin so
+      // every cell holds a standalone clickable view link.
       const fileEntries: string[] = [];
       const seenFiles = new Set<string>();
+      const absolutizeRef = (ref: string) => {
+        if (!ref.startsWith("/")) return ref;
+        // Remarks embedded by the mobile app carry its proxy prefix
+        // (/api/proxy/...); the dashboard proxies /documents/* directly,
+        // so strip it before anchoring to the dashboard origin.
+        const appPath = ref.startsWith("/api/proxy/")
+          ? ref.slice("/api/proxy".length)
+          : ref;
+        return `${window.location.origin}${appPath}`;
+      };
       const pushFile = (name: string, ref: string) => {
-        const label = ref ? `${name} (${ref})` : name;
+        const absRef = ref.startsWith("Document ID:") ? ref : absolutizeRef(ref);
+        const label = absRef ? `${name} (${absRef})` : name;
         if (!seenFiles.has(label)) {
           seenFiles.add(label);
           fileEntries.push(label);
