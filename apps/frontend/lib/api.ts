@@ -271,6 +271,12 @@ export type Lead = {
     documents: number;
   };
   customFields?: Record<string, any>;
+  // Latest dispose CALL remark (populated by GET /leads list endpoint).
+  interactions?: Array<{
+    content: string | null;
+    subject: string | null;
+    occurredAt: string;
+  }>;
   createdAt: string;
   updatedAt: string;
 };

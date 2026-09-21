@@ -170,6 +170,18 @@ router.get("/", authenticate, async (req, res) => {
             email: true,
           },
         },
+        // Latest dispose CALL remark (mobile Dispose Lead tab stores the
+        // remark as the CALL interaction content). take:1 keeps this cheap.
+        interactions: {
+          where: { type: "CALL" },
+          orderBy: { occurredAt: "desc" },
+          take: 1,
+          select: {
+            content: true,
+            subject: true,
+            occurredAt: true,
+          },
+        },
       },
       orderBy: { createdAt: "desc" as const },
     };

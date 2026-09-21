@@ -421,6 +421,7 @@ export default function LeadsPage() {
       "Budget Min",
       "Budget Max",
       "Assigned To",
+      "Remark",
       "Created At"
     ];
 
@@ -430,7 +431,22 @@ export default function LeadsPage() {
     const rows = exportLeads.map(lead => {
       // Normalize name to convert styled math/unicode characters to standard ascii
       const fullName = `${lead.firstName || ""} ${lead.lastName || ""}`.trim().normalize("NFKC");
-      
+
+      // Latest dispose remark from mobile (CALL interaction content).
+      // Mirrors apps/mobile dispose logic: strip attachment markdown and
+      // placeholder defaults so the CSV shows only the human remark.
+      const rawRemark = lead.interactions?.[0]?.content || "";
+      const cleanRemark = rawRemark
+        .replace(/\n\n\[Attachment: .*?\]\(.*?\)/g, "")
+        .replace(/\n\n\[Attachment: .*?\] \(Document ID: .*?\)/g, "")
+        .trim();
+      const remark =
+        cleanRemark === "" ||
+        cleanRemark === "Call connected successfully." ||
+        cleanRemark === "Call was not connected."
+          ? ""
+          : cleanRemark.normalize("NFKC").replace(/[\r\n]+/g, " ").trim();
+
       const rowData = [
         fullName,
         lead.email || "",
@@ -442,6 +458,7 @@ export default function LeadsPage() {
         lead.budgetMin || "",
         lead.budgetMax || "",
         lead.assignedTo?.fullName || "",
+        remark,
         new Date(lead.createdAt).toLocaleDateString()
       ];
 
