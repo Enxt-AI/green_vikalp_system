@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Settings2 } from "lucide-react";
+import { Settings2, ChevronDown, Download, Sheet, Loader2 } from "lucide-react";
 import {
   Table,
   TableBody,
@@ -37,7 +37,7 @@ import { AddLeadDialog } from "@/components/add-lead-dialog";
 import { StatCardsSkeleton, TableSkeleton, Skeleton } from "@/components/ui/skeleton";
 import { ImportLeadsDialog } from "@/components/import-leads-dialog";
 import { EditLeadDialog } from "@/components/edit-lead-dialog";
-import { leads as leadsApi, campaigns as campaignsApi, auth, type Lead, type Campaign, type LeadType, type Priority, type User, type PagedResponse, type LeadStats, type LeadListParams } from "@/lib/api";
+import { leads as leadsApi, campaigns as campaignsApi, auth, integrations as integrationsApi, type Lead, type Campaign, type LeadType, type Priority, type User, type PagedResponse, type LeadStats, type LeadListParams } from "@/lib/api";
 import { CACHE_TTLS, invalidateCache, useCachedFetch } from "@/lib/cached-fetch";
 import { useAuth } from "@/lib/auth-context";
 import { toast } from "sonner";
@@ -76,6 +76,8 @@ export default function LeadsPage() {
   const [customStartDate, setCustomStartDate] = useState<string>("");
   const [customEndDate, setCustomEndDate] = useState<string>("");
   const [page, setPage] = useState(1);
+  const [exportMenuOpen, setExportMenuOpen] = useState(false);
+  const [exportingSheets, setExportingSheets] = useState(false);
 
   // Convert UI filters (incl. date presets) to server query params
   const serverFilters = useMemo<LeadListParams>(() => {
@@ -159,8 +161,7 @@ export default function LeadsPage() {
   const campaigns = campaignsData ?? [];
 
   // Bulk assign state
-  const [selectedLeadIds, setSelectedLeadIds] = useState<Set<string>>(new Set());
-  const [showBulkAssignDialog, setShowBulkAssignDialog] = useState(false);
+  const [selectedLeadIds, setSelectedLeadIds] = useState<Set<string>>(new Set());  const [showBulkAssignDialog, setShowBulkAssignDialog] = useState(false);
   const [bulkAssignUserId, setBulkAssignUserId] = useState<string>("");
   const [bulkAssigning, setBulkAssigning] = useState(false);
 
@@ -389,10 +390,13 @@ export default function LeadsPage() {
     }
   };
 
-  const handleExportCSV = async () => {
+  // Shared CSV builder for both export actions (download + Google Sheets).
+  // Returns null (after toasting) when there is nothing to export or the
+  // fetch fails. Content has no BOM; callers add it only for file download.
+  const buildExportPayload = async (): Promise<{ csvContent: string; filename: string } | null> => {
     if (totalLeads === 0) {
       toast.error("No leads to export");
-      return;
+      return null;
     }
 
     // Fetch all matching leads across pages (100/page to stay light on 0.5 CPU).
@@ -409,7 +413,7 @@ export default function LeadsPage() {
       }
     } catch {
       toast.error("Failed to fetch leads for export");
-      return;
+      return null;
     }
 
     const baseHeaders = [
@@ -527,14 +531,43 @@ export default function LeadsPage() {
       ...rows.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(","))
     ].join("\n");
 
-    const blob = new Blob(["\uFEFF" + csvContent], { type: 'text/csv;charset=utf-8;' });
+    return {
+      csvContent,
+      filename: `leads_export_${new Date().toISOString().split('T')[0]}.csv`,
+    };
+  };
+
+  const handleDownloadCSV = async () => {
+    setExportMenuOpen(false);
+    const payload = await buildExportPayload();
+    if (!payload) return;
+    const blob = new Blob(["\uFEFF" + payload.csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.setAttribute("href", url);
-    link.setAttribute("download", `leads_export_${new Date().toISOString().split('T')[0]}.csv`);
+    link.setAttribute("download", payload.filename);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+  };
+
+  const handleOpenInGoogleSheets = async () => {
+    const payload = await buildExportPayload();
+    if (!payload) return;
+    setExportingSheets(true);
+    try {
+      const result = await integrationsApi.exportLeadsToGoogleSheet({
+        name: payload.filename.replace(/\.csv$/, ""),
+        csv: payload.csvContent,
+      });
+      toast.success("Google Sheet created");
+      setExportMenuOpen(false);
+      window.open(result.url, "_blank", "noopener,noreferrer");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to create Google Sheet");
+    } finally {
+      setExportingSheets(false);
+    }
   };
 
   return (
@@ -567,18 +600,46 @@ export default function LeadsPage() {
           )}
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={handleExportCSV}>
-            <svg
-              className="mr-2 h-4 w-4"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              strokeWidth={2}
-            >
-              <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
-            </svg>
-            Export CSV
-          </Button>
+          <Popover open={exportMenuOpen} onOpenChange={setExportMenuOpen}>
+            <PopoverTrigger asChild>
+              <Button variant="outline">
+                <svg
+                  className="mr-2 h-4 w-4"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+                </svg>
+                Export
+                <ChevronDown className="ml-2 h-4 w-4" />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-56 p-1" align="end">
+              <Button
+                variant="ghost"
+                className="w-full justify-start font-normal"
+                onClick={handleDownloadCSV}
+              >
+                <Download className="mr-2 h-4 w-4" />
+                Download
+              </Button>
+              <Button
+                variant="ghost"
+                className="w-full justify-start font-normal"
+                onClick={handleOpenInGoogleSheets}
+                disabled={exportingSheets}
+              >
+                {exportingSheets ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Sheet className="mr-2 h-4 w-4" />
+                )}
+                {exportingSheets ? "Creating sheet..." : "Open in Google Sheets"}
+              </Button>
+            </PopoverContent>
+          </Popover>
           <ImportLeadsDialog onLeadsImported={fetchLeads}>
             <Button variant="outline">
               <svg

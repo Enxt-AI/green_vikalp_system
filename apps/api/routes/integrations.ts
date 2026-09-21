@@ -661,6 +661,68 @@ router.post("/google-drive/import", authenticate, async (req: Request, res: Resp
   }
 });
 
+// POST /integrations/google-drive/export-sheet - Create a Google Sheet from
+// CSV content in the user's Drive and return its URL. Uses the existing
+// drive.file OAuth scope (no re-consent needed); Drive converts the CSV.
+router.post("/google-drive/export-sheet", authenticate, async (req: Request, res: Response) => {
+  try {
+    const userId = req.user!.userId;
+    const { name, csv } = req.body as { name?: string; csv?: string };
+
+    if (!csv || typeof csv !== "string" || csv.trim() === "") {
+      res.status(400).json({ error: "Missing CSV content" });
+      return;
+    }
+    if (Buffer.byteLength(csv, "utf8") > 10 * 1024 * 1024) {
+      res.status(400).json({ error: "Export is larger than 10MB. Use CSV download instead." });
+      return;
+    }
+
+    const { getDriveClient } = await import("../lib/google-drive");
+    const drive = await getDriveClient(userId);
+    if (!drive) {
+      res.status(400).json({
+        error: "Google Drive is not connected. Connect it under Dashboard → Integrations → Google Drive, then try again.",
+      });
+      return;
+    }
+
+    const sheetName =
+      (typeof name === "string" && name.trim() !== "" ? name.trim() : "leads_export") +
+      `_${new Date().toISOString().split("T")[0]}`;
+
+    const { Readable } = await import("stream");
+    const created = await drive.files.create({
+      requestBody: {
+        name: sheetName,
+        mimeType: "application/vnd.google-apps.spreadsheet",
+      },
+      media: {
+        mimeType: "text/csv",
+        body: Readable.from([csv]),
+      },
+      fields: "id, name",
+      supportsAllDrives: true,
+    } as any);
+
+    const fileId = created.data.id;
+    if (!fileId) {
+      res.status(500).json({ error: "Google did not return a file id" });
+      return;
+    }
+
+    res.json({
+      id: fileId,
+      name: created.data.name || sheetName,
+      url: `https://docs.google.com/spreadsheets/d/${fileId}/edit`,
+    });
+  } catch (error: any) {
+    console.error("Error exporting sheet to Drive:", error?.response?.data || error);
+    const details = error?.response?.data?.error?.message || error?.message;
+    res.status(500).json({ error: "Failed to create Google Sheet", details });
+  }
+});
+
 // POST /integrations/webhooks/pabbly/:source/:campaignId/:stageId - Unauthenticated webhook for lead gen sources
 router.post("/webhooks/pabbly/:source/:campaignId/:stageId", async (req: Request, res: Response) => {
   try {

@@ -1624,6 +1624,12 @@ export const integrations = {
       method: "POST",
       body: formData,
     }),
+
+  exportLeadsToGoogleSheet: (data: { name: string; csv: string }) =>
+    request<{ id: string; name: string; url: string }>("/integrations/google-drive/export-sheet", {
+      method: "POST",
+      body: data,
+    }),
 };
 
 // ================================
